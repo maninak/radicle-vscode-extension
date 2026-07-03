@@ -1,10 +1,13 @@
 import type { Mock } from 'vitest'
 import type { HttpdProject, Repo } from '../../../src/types'
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fetchFromHttpd, getConfig } from '../../../src/helpers'
 import { useRepoListStore } from '../../../src/stores/repoListStore'
+
+const fakeStorageDir = join('fake', 'storage')
 
 vi.mock('node:fs', () => ({
   existsSync: vi.fn(() => false),
@@ -14,7 +17,7 @@ vi.mock('node:fs', () => ({
   mkdirSync: vi.fn(),
 }))
 vi.mock('../../../src/stores', () => ({
-  useEnvStore: vi.fn(() => ({ extCtx: { globalStorageUri: { fsPath: '/fake/storage' } } })),
+  useEnvStore: vi.fn(() => ({ extCtx: { globalStorageUri: { fsPath: fakeStorageDir } } })),
 }))
 vi.mock('../../../src/helpers', () => ({ fetchFromHttpd: vi.fn(), getConfig: vi.fn() }))
 vi.mock('../../../src/utils', () => ({
@@ -35,7 +38,7 @@ interface CachedRepoList {
 }
 
 const endpoint = 'https://iris.radicle.network'
-const cacheFile = '/fake/storage/cloneable-repos.json'
+const cacheFile = join(fakeStorageDir, 'cloneable-repos.json')
 const oneDayInMs = 24 * 60 * 60 * 1000
 
 function makeRepo(rid: string, name: string, seeding: number, description = ''): Repo {

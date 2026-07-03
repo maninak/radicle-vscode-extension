@@ -1,9 +1,12 @@
 import type { Mock } from 'vitest'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { readAliasesFromNodeDb } from '../../../src/helpers'
 import { useAliasStore } from '../../../src/stores/aliasStore'
+
+const fakeStorageDir = join('fake', 'storage')
 
 vi.mock('node:fs', () => ({
   existsSync: vi.fn(() => false),
@@ -12,7 +15,7 @@ vi.mock('node:fs', () => ({
   mkdirSync: vi.fn(),
 }))
 vi.mock('../../../src/stores', () => ({
-  useEnvStore: vi.fn(() => ({ extCtx: { globalStorageUri: { fsPath: '/fake/storage' } } })),
+  useEnvStore: vi.fn(() => ({ extCtx: { globalStorageUri: { fsPath: fakeStorageDir } } })),
 }))
 vi.mock('../../../src/helpers', () => ({ readAliasesFromNodeDb: vi.fn() }))
 vi.mock('../../../src/utils', () => ({ log: vi.fn() }))
@@ -47,7 +50,7 @@ describe('aliasStore', () => {
 
     expect(store.resolveAlias('z6MkB')).toBe('bob')
     expect(writeFileSyncMock).toHaveBeenCalledWith(
-      '/fake/storage/aliases.json',
+      join(fakeStorageDir, 'aliases.json'),
       JSON.stringify({ z6MkB: 'bob' }),
     )
   })
