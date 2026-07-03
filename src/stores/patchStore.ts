@@ -103,13 +103,15 @@ export const usePatchStore = defineStore('patch', () => {
       return false
     }
     const nowTs = Date.now() / 1000 // we divide to align with the patch data timestamp format
-    tsWhenLoadedAll.value = nowTs
 
     const { data: loadedPatches, error } = loadPatches(rid)
     if (error) {
+      // leave `tsWhenLoadedAll` unset on failure, so `initStoreIfNeeded` retries on the next
+      // tree refresh instead of treating this repo as permanently (if emptily) loaded
       return false
     }
 
+    tsWhenLoadedAll.value = nowTs
     patches.value = loadedPatches.map((loadedPatch) => ({
       ...loadedPatch,
       ...{ lastLoadedTs: nowTs },
