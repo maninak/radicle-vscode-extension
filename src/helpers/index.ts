@@ -1,3 +1,4 @@
+export * from './aliases'
 export * from './command'
 export * from './config'
 export * from './configWatcher'

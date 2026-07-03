@@ -1,5 +1,21 @@
 # Radicle VS Code Extension Change Log
 
+## **Unreleased**
+
+### ✨ Highlights
+
+🆓 from httpd!
+
+### 🚀 Enhancements
+
+- **aliases:** keep showing node aliases (for patch authors, reviewers, etc.), previously sourced by httpd. This is done using an OS-agnostic WASM sqlite reader, not with a native module, to retain multi-OS support, including for Windows and no per-distro releases. It accesses the local node's address book sqlite database, and stores them in a vscode-native, machine-local cache for instant rendering on next launch.
+
+### ☑️ Tests
+
+- **aliases:** cover node-alias resolution with unit tests (address-book cache seeding, refresh-and-persist, and mapping a patch author to its alias) and an e2e assertion that a patch author renders its alias, sourced from the local node's address book, instead of a node id
+
+---
+
 ## **v0.6.2** (June 20th, 2026)
 
 ### 🩹 Fixes

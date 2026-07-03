@@ -1,7 +1,18 @@
+import { copyFileSync, mkdirSync } from 'node:fs'
 import esbuild from 'esbuild'
 
 const isWatch = process.argv.includes('--watch')
 const isProduction = process.argv.includes('--production')
+
+/**
+ * `sql.js` (used to read the node's sqlite address book for aliases) loads its WASM binary at
+ * runtime from next to the bundle, so it must be copied into `dist/`. Using the WASM build
+ * keeps the extension free of native modules and thus multi-OS.
+ */
+function copySqlJsWasm() {
+  mkdirSync('./dist', { recursive: true })
+  copyFileSync('./node_modules/sql.js/dist/sql-wasm.wasm', './dist/sql-wasm.wasm')
+}
 
 /**
  * Emits build progress and errors in the exact shape the `$esbuild-watch` / `$esbuild` VS Code
@@ -28,6 +39,7 @@ const problemMatcherPlugin = {
           console.error(`    ${location.file}:${location.line}:${location.column}:`)
         }
       })
+      copySqlJsWasm()
       process.stdout.write('[watch] build finished\n')
     })
   },
