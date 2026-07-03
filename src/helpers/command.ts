@@ -1,7 +1,7 @@
 import type { AugmentedPatch, Patch, PatchStatus } from '../types'
 import { commands, type TextDocumentShowOptions, Uri, window } from 'vscode'
 import { createOrReuseWebviewPanel, execPatchMutation, execRad } from '.'
-import { useEnvStore, usePatchStore } from '../stores'
+import { useAliasStore, useEnvStore, usePatchStore } from '../stores'
 import { assert, assertUnreachable, log, showLog } from '../utils'
 import {
   checkOutDefaultBranch,
@@ -103,11 +103,12 @@ export function registerAllCommands(): void {
     commands.executeCommand('workbench.actions.treeView.patches-view.collapseAll')
   })
   registerVsCodeCmd('radicle.refreshAllPatches', () => {
+    void useAliasStore().refreshAliases()
     usePatchStore().resetAllPatches()
   })
   registerVsCodeCmd('radicle.refreshOnePatch', (patchId: Patch['id'] | undefined) => {
     assert(patchId)
-    usePatchStore().refetchPatch(patchId)
+    usePatchStore().reloadPatch(patchId)
   })
   registerVsCodeCmd('radicle.checkoutPatch', checkOutPatch)
   registerVsCodeCmd('radicle.checkoutDefaultBranch', checkOutDefaultBranch)

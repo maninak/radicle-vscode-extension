@@ -85,7 +85,7 @@ export function registerAllWebviewRestorators() {
                 initializePanel(panel, webviewId, state)
               } else {
                 const patchStore = usePatchStore()
-                await patchStore.initStoreIfNeeded()
+                patchStore.initStoreIfNeeded()
                 const foundPatch = patchStore.findPatchByTitle(panel.title.replace(/…?$/, ''))
 
                 if (!foundPatch) {
@@ -112,7 +112,9 @@ export async function getStateForWebview(
   patchId: Patch['id'],
 ): Promise<PatchDetailWebviewInjectedState>
 
-// eslint-disable-next-line  consistent-return, jsdoc/require-jsdoc
+// getStateForWebview keeps its async/Promise contract (overloaded, awaited by callers) even
+// though its only async step (reloadPatch) is now synchronous.
+// eslint-disable-next-line  consistent-return, jsdoc/require-jsdoc, require-await
 export async function getStateForWebview(
   webviewId: WebviewId,
   data: unknown,
@@ -123,7 +125,7 @@ export async function getStateForWebview(
       const patchId = data as Patch['id']
       let patch = patchStore.findPatchById(patchId)
       if (!patch) {
-        await patchStore.refetchPatch(patchId)
+        patchStore.reloadPatch(patchId)
         patch = patchStore.findPatchById(patchId)
       }
       assert(patch)

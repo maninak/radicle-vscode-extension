@@ -58,6 +58,8 @@ describe('radicle.advanced.pathToRadBinary validation pattern', () => {
     ['windows drive root only', 'C:\\'],
     ['a relative bin name', 'rad'],
     ['a UNC network path', '\\\\server\\share\\rad.exe'],
+    ['a tilde-prefixed posix path', '~/.radicle/bin/rad'],
+    ['a tilde path without separator', '~radicle/bin/rad'],
     ['a windows path with an illegal char', 'C:\\bad<name\\rad.exe'],
   ] as const
 
@@ -110,9 +112,9 @@ describe('getValidatedPathToRadBinaryWhenAliased()', () => {
     expect(resolved).toBe('C:\\Users\\me\\.cargo\\bin\\rad.exe')
   })
 
-  // Regression: `where` can return several matches, one per line. Passing the whole multi-line
-  // blob on to the fs check makes it throw, so the alias would resolve to nothing even when rad
-  // is installed. We keep only the first (highest-priority) match.
+  // Regression: `where` can return several matches, one per line. Passing the whole
+  // multi-line blob on to the fs check makes it throw, so the alias would resolve to nothing
+  // even when rad is installed. We keep only the first (highest-priority) match.
   it('uses the first match when `where` returns several lines', () => {
     stubPlatform('win32')
     const firstMatch = 'C:\\Users\\me\\.cargo\\bin\\rad.exe'

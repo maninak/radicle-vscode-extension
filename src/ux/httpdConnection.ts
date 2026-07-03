@@ -18,7 +18,15 @@ export async function validateHttpdConnection(
 ): Promise<boolean> {
   const { data: root, response, error } = await fetchFromHttpd('/')
   if (!root) {
-    !options.minimizeUserNotifications && notifyUserAboutFetchError(error)
+    if (options.minimizeUserNotifications) {
+      log(
+        'Radicle HTTP API is unreachable. It is optional: patch data is sourced from the ' +
+          'local Radicle node.',
+        'info',
+      )
+    } else {
+      notifyUserAboutFetchError(error)
+    }
 
     return false
   } else if (root.service !== 'radicle-httpd') {
@@ -46,7 +54,8 @@ export async function validateHttpdConnection(
  *
  * @param error The error that was thrown when the recuest to httpd failed.
  */
-// TODO: revisit all cases because the errors seem to have changed (due to Fetch v2?) and most/all cases seem to not match anymore
+// TODO: revisit all cases because the errors seem to have changed (due to Fetch v2?) and
+// most/all cases seem to not match anymore
 export async function notifyUserAboutFetchError(error: FetchError): Promise<void> {
   const requestUrl = error?.request?.toString()
   const buttonOutput = 'Show Output'

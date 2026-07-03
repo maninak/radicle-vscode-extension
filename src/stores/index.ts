@@ -1,4 +1,6 @@
+export * from './aliasStore'
 export * from './envStore'
 export * from './gitStore'
 export * from './patchStore'
+export * from './repoListStore'
 export * from './webviewStore'

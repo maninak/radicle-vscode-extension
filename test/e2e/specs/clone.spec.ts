@@ -43,6 +43,9 @@ describe('Cloning a Radicle repo', () => {
     await setExtensionHttpApiEndpoint(`http://${httpdHost}:${getWorkerHttpdPort(workerIndex)}`)
     await browser.executeWorkbench((_vscode: typeof VsCode, value: string) => {
       process.env['RAD_E2E_CLONE_PARENT_DIR'] = value
+      // Always fetch fresh so a prior test's cached list can't mask the unreachable-httpd
+      // case.
+      process.env['RAD_E2E_DISABLE_REPO_LIST_CACHE'] = 'true'
     }, cloneParentDir)
   })
 
@@ -63,7 +66,8 @@ describe('Cloning a Radicle repo', () => {
   it('lists the repo, runs a real `rad clone`, and writes a valid checkout', async () => {
     await workbench.executeCommand('Clone a Radicle Repository Locally')
 
-    // HACK: because wdio-vscode-service@6.1.4 `selectQuickPick` is bugged
+    // HACK(wdio): drives the quick pick through raw selectors and key presses, because
+    // wdio-vscode-service@6.1.4 `selectQuickPick` is bugged. Remove when the service is fixed.
     const repoItem = await browser.$('.quick-input-widget .monaco-list-row')
     const repoItemText = await repoItem.getText()
     const repoItems = await browser.$$('.quick-input-widget .monaco-list-row')
@@ -98,14 +102,19 @@ describe('Cloning a Radicle repo', () => {
 
   it('surfaces an error when the Radicle HTTP API is unreachable', async () => {
     stopWorkerNodeAndHttpd(workerIndex)
+    // a never-before-fetched endpoint, so there's nothing cached to gracefully fall back to
+    // and the error is guaranteed to surface, unlike re-pointing at this same worker's now-
+    // stopped httpd, which the prior test already populated the in-memory repo list cache for
+    await setExtensionHttpApiEndpoint(`http://${httpdHost}:1`)
     await workbench.executeCommand('Clone a Radicle Repository Locally')
 
     await expectNotificationToContain(workbench, 'Failed', 'Radicle HTTP API')
   })
 })
 
-// HACK: Mirrors the settings spec, since wdio-vscode can't drive the Settings UI. Updating the
-// endpoint at runtime makes the extension reconnect to this worker's httpd.
+// HACK(wdio): mirrors the settings spec, since wdio-vscode-service@6.1.4 can't drive the
+// Settings UI (outdated locators for VS Code >= 1.100). Updating the endpoint at runtime
+// makes the extension reconnect to this worker's httpd. Remove when the service is fixed.
 async function setExtensionHttpApiEndpoint(endpoint: string) {
   await browser.executeWorkbench(async (vscode: typeof VsCode, value: string) => {
     const config = vscode.workspace.getConfiguration()

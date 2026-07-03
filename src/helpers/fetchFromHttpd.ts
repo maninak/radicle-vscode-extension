@@ -1,5 +1,13 @@
 import type { XOR } from 'ts-xor'
-import type { DiffResponse, HttpdRoot, Patch, PatchStatus, Repo } from '../types'
+import type {
+  BlobResponse,
+  DiffResponse,
+  HttpdProject,
+  HttpdRoot,
+  Patch,
+  PatchStatus,
+  Repo,
+} from '../types'
 import { type $Fetch, FetchError, type FetchOptions, type FetchResponse, ofetch } from 'ofetch'
 import { log, removeTrailingSlashes } from '../utils'
 import { getConfig } from './config'
@@ -7,7 +15,10 @@ import { getConfig } from './config'
 // if we ever use a proper reactive global store like pinia, `doFetch()` should move in there
 // and a watcher should run `resetHttpdConnection()` upon change of config
 // `radicle.advanced.httpApiEndpoint` (as of writing this, at least ^_^)
-// TODO: maninak either do this in configStore, or consider having an httpdStore where we export fetchFromHttpd as `useHttpd().fetch()` and internally doFetch is a computed that depends on `useConfigStore().resolvedHttpdRootUrl` or `radicle.advanced.httpApiEndpoint` with some other name
+// TODO: maninak either do this in configStore, or consider having an httpdStore where we
+// export fetchFromHttpd as `useHttpd().fetch()` and internally doFetch is a computed that
+// depends on `useConfigStore().resolvedHttpdRootUrl` or `radicle.advanced.httpApiEndpoint`
+// with some other name
 let doFetch: $Fetch
 
 /**
@@ -56,10 +67,14 @@ type FetchFromHttpdReturn<Data extends object> = Promise<
  * return true
  * ```
  *
- * @param path The relative path (as seen from the API's root) to the resource we want to access.
+ * @param path The relative path (as seen from the API's root) to the resource we want to
+ * access.
  * @param options Optionally additional request options like HTTP verb or request body.
  *
- * @returns Returns either an object with the properties `data` (ready-to-use data of the response) and`response` (complete response object with full context) if the request was successful, or an object with the poperty `error` (most times set with full context) if it isn't, but never both.
+ * @returns Returns either an object with the properties `data` (ready-to-use data of the
+ * response) and `response` (complete response object with full context) if the request was
+ * successful, or an object with the property `error` (most times set with full context) if it
+ * isn't, but never both.
  */
 
 /*
@@ -86,14 +101,28 @@ export async function fetchFromHttpd<RevBase extends string, RevOid extends stri
   path: `/repos/rad:${string}/diff/${RevBase}/${RevOid}`,
   options?: FetchOptions<'json'> & { method?: 'GET' },
 ): FetchFromHttpdReturn<DiffResponse>
+export async function fetchFromHttpd<Commit extends string>(
+  path: `/repos/rad:${string}/blob/${Commit}/${string}`,
+  options?: FetchOptions<'json'> & { method?: 'GET' },
+): FetchFromHttpdReturn<BlobResponse>
 export async function fetchFromHttpd(
   path: `/repos/rad:${string}`,
   options?: FetchOptions<'json'> & { method?: 'GET' },
 ): FetchFromHttpdReturn<Repo>
 export async function fetchFromHttpd(
   path: '/repos',
-  options: FetchOptions<'json'> & { query: { show: 'pinned' | 'all' }; method?: 'GET' },
+  options: FetchOptions<'json'> & {
+    query: { show: 'pinned' | 'all'; page?: number; perPage?: number }
+    method?: 'GET'
+  },
 ): FetchFromHttpdReturn<Repo[]>
+export async function fetchFromHttpd(
+  path: '/projects',
+  options: FetchOptions<'json'> & {
+    query: { show: 'pinned' | 'all'; page?: number; perPage?: number }
+    method?: 'GET'
+  },
+): FetchFromHttpdReturn<HttpdProject[]>
 export async function fetchFromHttpd(
   path: '/',
   options?: FetchOptions<'json'> & { method?: 'GET' },

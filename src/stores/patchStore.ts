@@ -1,16 +1,20 @@
 import type { AugmentedPatch, Patch } from '../types'
-import { computed, effect, ref, unref } from '@vue/reactivity'
+import { computed, effect, ref, shallowRef, unref } from '@vue/reactivity'
 import { createPinia, defineStore, setActivePinia } from 'pinia'
-import { useEnvStore, useGitStore, useWebviewStore } from '.'
-import { fetchFromHttpd } from '../helpers'
+import { useAliasStore, useEnvStore, useGitStore, useWebviewStore } from '.'
+import { loadPatch, loadPatches } from '../helpers'
 import { rerenderAllItemsInPatchesView, rerenderSomeItemsInPatchesView } from '../ux'
 
 setActivePinia(createPinia())
 
 export const usePatchStore = defineStore('patch', () => {
-  const tsWhenFetchedAll = ref<number>()
+  const tsWhenLoadedAll = ref<number>()
 
-  const patches = ref<AugmentedPatch[]>()
+  // Shallow on purpose: patches are a large tree (revisions, discussions, reviews, reactions)
+  // read across sorting, tooltips and webview serialization; deep-proxying it all is pure
+  // overhead. Updates already flow through wholesale reassignment (below) or explicit
+  // rerenders.
+  const patches = shallowRef<AugmentedPatch[]>()
   effect(() => {
     patches.value
       ? rerenderSomeItemsInPatchesView(patches.value)
@@ -18,15 +22,19 @@ export const usePatchStore = defineStore('patch', () => {
   })
   effect(() => {
     // Patches view items should be recalculated when any of those change
-    // so we import them, even if unused, to bind them as dependencies to `effect`.
+    // so we read them, even if unused, to bind them as dependencies to `effect`.
+    // `aliasByNId` is included so patches re-map (picking up author aliases) once the address
+    // book is read/refreshed.
     const { currentRepoId, currentRepoInfo, localIdentity } = useEnvStore()
     void currentRepoInfo?.delegates
     void localIdentity?.DID
+    void useAliasStore().aliasByNId
 
     currentRepoId && resetAllPatches()
   })
 
-  // TODO: maninak do similar and use latest commit to resolve the currently checkout out revision?
+  // TODO: maninak do similar and use latest commit to resolve the currently checked out
+  // revision?
   const prevCheckedOutPatch = ref<AugmentedPatch>()
   const checkedOutPatch = computed<AugmentedPatch | undefined>((_prevCheckedOutPatch) => {
     prevCheckedOutPatch.value = _prevCheckedOutPatch
@@ -41,8 +49,11 @@ export const usePatchStore = defineStore('patch', () => {
     return newCheckedOutPatch
   })
   effect(() => {
+    // `checkedOutPatch` must be read (and thus recomputed) *before* `prevCheckedOutPatch`:
+    // its recompute is what refreshes `prevCheckedOutPatch`, and this effect cannot
+    // retrigger itself off that write, so reading prev first would rerender a stale item
     rerenderSomeItemsInPatchesView(
-      [prevCheckedOutPatch.value, checkedOutPatch.value].filter(Boolean),
+      [checkedOutPatch.value, prevCheckedOutPatch.value].filter(Boolean),
     )
   })
 
@@ -58,111 +69,69 @@ export const usePatchStore = defineStore('patch', () => {
     return foundPatch
   }
 
-  async function refetchPatch(patchId: Patch['id']) {
+  function reloadPatch(patchId: Patch['id']) {
     const rid = useEnvStore().currentRepoId
     if (!rid) {
       return { error: new Error('Failed resolving RID') }
     }
 
-    const nowTs = Date.now() / 1000 // we devide to align with the httpd's timestamp format
-    const { data: fetchedPatch, error } = await fetchFromHttpd(
-      `/repos/${rid}/patches/${patchId}`,
-    )
+    const nowTs = Date.now() / 1000 // we divide to align with the patch data timestamp format
+    const { data: loadedPatch, error } = loadPatch(rid, patchId)
     if (error) {
       return { error }
     }
 
-    const existingPatch = findPatchById(fetchedPatch.id)
-    const augmentedFetchedPatch = { ...fetchedPatch, ...{ lastFetchedTs: nowTs } }
+    const existingPatch = findPatchById(loadedPatch.id)
+    const augmentedLoadedPatch = { ...loadedPatch, ...{ lastLoadedTs: nowTs } }
     if (existingPatch) {
       // we use `Object.assign()` to keep the same object ref
-      Object.assign(existingPatch, augmentedFetchedPatch)
+      Object.assign(existingPatch, augmentedLoadedPatch)
       // HACK: these below should be getting triggered reactively but they don't :/
       rerenderSomeItemsInPatchesView(existingPatch)
       useWebviewStore().find(`webview-patch-detail_${patchId}`)?.effectRunner()
     } else {
-      if (!patches.value) {
-        patches.value = []
-      }
-      patches.value.push(augmentedFetchedPatch)
+      // reassign (not push) so the shallowRef notifies its dependents
+      patches.value = [...(patches.value ?? []), augmentedLoadedPatch]
     }
 
     return {}
   }
 
-  let inProgressRequest: Promise<unknown> | undefined
-  async function fetchAllPatches() {
-    if (inProgressRequest) {
-      try {
-        await inProgressRequest
-
-        return true
-      } catch {
-        return false
-      }
-    }
-
-    // TODO: maninak remove code for backwards compatibility
-    // Backwards compatibility with non-latest httpd versions while users are transitioning.
-    // Should be removed in a couple of months.
-    let queryKey = 'status' as const
-    let path = 'repos' as const
-    const httpdApiVersionMajor = (await fetchFromHttpd('/')).data?.apiVersion[0]
-    if (httpdApiVersionMajor && Number.parseInt(httpdApiVersionMajor) < 3) {
-      queryKey = 'state' as 'status'
-      path = 'projects' as 'repos'
-    }
-
+  function loadAllPatches() {
     const rid = useEnvStore().currentRepoId
     if (!rid) {
       return false
     }
-    const nowTs = Date.now() / 1000 // we devide to align with the httpd's timestamp format
-    tsWhenFetchedAll.value = nowTs
-    const promisedResponses = Promise.all([
-      fetchFromHttpd(`/${path}/${rid}/patches`, {
-        query: { [queryKey]: 'draft', perPage: 500 },
-      }),
-      fetchFromHttpd(`/${path}/${rid}/patches`, {
-        query: { [queryKey]: 'open', perPage: 500 },
-      }),
-      fetchFromHttpd(`/${path}/${rid}/patches`, {
-        query: { [queryKey]: 'archived', perPage: 500 },
-      }),
-      fetchFromHttpd(`/${path}/${rid}/patches`, {
-        query: { [queryKey]: 'merged', perPage: 500 },
-      }),
-    ]).finally(() => (inProgressRequest = undefined))
-    inProgressRequest = promisedResponses
+    const nowTs = Date.now() / 1000 // we divide to align with the patch data timestamp format
 
-    const responses = await promisedResponses
-    const errors = responses.map((response) => response.error).filter(Boolean)
-    if (errors.length) {
+    const { data: loadedPatches, error } = loadPatches(rid)
+    if (error) {
+      // leave `tsWhenLoadedAll` unset on failure, so `initStoreIfNeeded` retries on the next
+      // tree refresh instead of treating this repo as permanently (if emptily) loaded
       return false
     }
 
-    const fetchedPatches = responses
-      .flatMap((response) => response.data)
-      .filter(Boolean)
-      .map((fetchedPatch) => ({ ...fetchedPatch, ...{ lastFetchedTs: nowTs } }))
-
-    patches.value = fetchedPatches
+    tsWhenLoadedAll.value = nowTs
+    patches.value = loadedPatches.map((loadedPatch) => ({
+      ...loadedPatch,
+      ...{ lastLoadedTs: nowTs },
+    }))
 
     return true
   }
 
-  async function initStoreIfNeeded() {
-    return !tsWhenFetchedAll.value && (await fetchAllPatches())
+  function initStoreIfNeeded() {
+    return !tsWhenLoadedAll.value && loadAllPatches()
   }
 
   function resetAllPatches() {
     patches.value = undefined
-    tsWhenFetchedAll.value = undefined
+    tsWhenLoadedAll.value = undefined
   }
 
-  const lastFetchedTs = computed(() => {
+  const lastLoadedTs = computed(() => {
     const ts = unref(
-      patches.value?.length === 1 ? patches.value[0]?.lastFetchedTs : tsWhenFetchedAll,
+      patches.value?.length === 1 ? patches.value[0]?.lastLoadedTs : tsWhenLoadedAll,
     )
 
     return ts
@@ -171,11 +140,11 @@ export const usePatchStore = defineStore('patch', () => {
   return {
     patches,
     checkedOutPatch,
-    lastFetchedTs,
+    lastLoadedTs,
     findPatchById,
     findPatchByTitle,
     resetAllPatches,
-    refetchPatch,
+    reloadPatch,
     initStoreIfNeeded,
   }
 })

@@ -62,7 +62,7 @@ export async function mutatePatch(
     return
   }
 
-  usePatchStore().refetchPatch(patchId)
+  usePatchStore().reloadPatch(patchId)
 
   if (mutateOp.outcome === 'success' && mutateOp.didAnnounce) {
     const patchName = `"${truncateKeepWords(patchTitle, 20)}"` // magic number to fit in one line

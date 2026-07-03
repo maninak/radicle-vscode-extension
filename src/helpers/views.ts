@@ -30,9 +30,9 @@ function registerPatchesView() {
 
     // TODO: maninak add "Updating..."
 
-    const lastFetchedTs = usePatchStore().lastFetchedTs
-    if (lastFetchedTs) {
-      patchesView.description = `${formattedPatchCount}Updated ${getTimeAgo(lastFetchedTs)}`
+    const lastLoadedTs = usePatchStore().lastLoadedTs
+    if (lastLoadedTs) {
+      patchesView.description = `${formattedPatchCount}Updated ${getTimeAgo(lastLoadedTs)}`
     }
   })
   setInterval(() => {
@@ -47,7 +47,8 @@ function registerPatchesView() {
  * the Patches view. By default, it will attempt to scroll the patch into view
  * and select it.
  * @param patch - The patch to be revealed in the Patches view.
- * @param options - Optional options for how the patch should be revealed. To change this behavior, set as follows:
+ * @param options - Optional options for how the patch should be revealed. To change this
+ * behavior, set as follows:
  * - In order to not to select, set the option `select` to `false`.
  * - In order to focus, set the option `focus` to `true`.
  * - In order to expand the revealed element, set the option `expand` to `true`. To expand

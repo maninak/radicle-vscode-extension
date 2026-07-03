@@ -8,13 +8,9 @@ import {
   registerAllWebviewRestorators,
   registerExtensionHostAutoReload,
 } from './helpers'
-import { useEnvStore } from './stores'
+import { useAliasStore, useEnvStore } from './stores'
 import { setWhenClauseContext } from './utils'
-import {
-  validateHttpdConnection,
-  validateRadCliInstallation,
-  validateRadicleIdentityAuthentication,
-} from './ux'
+import { validateRadCliInstallation, validateRadicleIdentityAuthentication } from './ux'
 
 export function activate(ctx: ExtensionContext) {
   useEnvStore().setExtensionContext(ctx)
@@ -29,7 +25,7 @@ export function activate(ctx: ExtensionContext) {
   logExtensionActivated()
   validateRadCliInstallation({ minimizeUserNotifications: true })
   validateRadicleIdentityAuthentication({ minimizeUserNotifications: true })
-  validateHttpdConnection({ minimizeUserNotifications: true })
+  void useAliasStore().refreshAliases({ minimizeUserNotifications: true })
 
   setWhenClauseContext('radicle.isExtensionActivated', true)
 }
