@@ -686,8 +686,10 @@ async function expectPatchItemCheckedOutMarker(label: string, isShown: boolean) 
       return false
     },
     {
-      // patch checkouts trigger several successive re-renders, so give them extra room
-      timeout: 20_000,
+      // patch checkouts trigger several successive re-renders, each involving a `rad cob show`
+      // that can transiently fail and retry if it races the checkout's own node lock; under
+      // heavy parallel CI load that chain occasionally needs more than a few seconds to settle
+      timeout: 30_000,
       timeoutMsg: `expected the item labeled "${label}" to ${
         isShown ? 'show' : 'not show'
       } the checked-out marker. Last visible row text: "${lastRowText}"`,
