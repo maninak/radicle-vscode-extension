@@ -1,4 +1,5 @@
 import { access, constants } from 'node:fs'
+import { homedir } from 'node:os'
 import { type Disposable, RelativePattern, Uri, workspace } from 'vscode'
 import {
   getAbsolutePathToDefaultRadBinaryDirectory,
@@ -37,6 +38,9 @@ function getNotInWorkspaceFileWatchers(): FileWatcherConfig[] {
         ),
       handler: () => {
         useEnvStore().refreshCurrentRepoId() // doesn't _need_ to be immediate but ok for now
+        // a branch's upstream tracking lives in `.git/config` and may be (re-)configured
+        // after HEAD already changed, e.g. by `rad patch checkout`
+        useGitStore().refreshCurentBranch()
         setWhenClauseContext('radicle.isRadInitialized', isRadInitialized())
       },
       immediate: true,
@@ -76,13 +80,16 @@ function getNotInWorkspaceFileWatchers(): FileWatcherConfig[] {
     // installation with package manager
     (() => {
       let pathToRadBinaryDirWithTrailingSlash: `${string}/` | undefined
-      // eslint-disable-next-line ts/switch-exhaustiveness-check -- obscure platforms have no known rad path; they fall through to `default` and rely on user config
+      // obscure platforms have no known rad path; they fall through to `default` and rely on
+      // user config
+      // eslint-disable-next-line ts/switch-exhaustiveness-check -- see comment above
       switch (process.platform) {
         case 'linux':
           pathToRadBinaryDirWithTrailingSlash = '/usr/bin/'
           break
         case 'darwin':
-          pathToRadBinaryDirWithTrailingSlash = '~/.cargo/bin/'
+          // must be pre-expanded: neither VS Code watchers nor fs APIs expand `~` themselves
+          pathToRadBinaryDirWithTrailingSlash = `${homedir()}/.cargo/bin/`
           break
         default:
           log(

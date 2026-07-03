@@ -8,11 +8,24 @@
 
 ### 🚀 Enhancements
 
+- **httpd:** remove the need for httpd. Radicle Patches now work fully offline, without needing `radicle-httpd` to be installed or running. All patch data (listings, details, file diffs) is sourced directly from the local Radicle node using the `rad` CLI and git. The HTTP API remains supported as an optional, alternative source of network state for upcoming features.
 - **aliases:** keep showing node aliases (for patch authors, reviewers, etc.), previously sourced by httpd. This is done using an OS-agnostic WASM sqlite reader, not with a native module, to retain multi-OS support, including for Windows and no per-distro releases. It accesses the local node's address book sqlite database, and stores them in a vscode-native, machine-local cache for instant rendering on next launch.
+
+### 🩹 Fixes
+
+- **patches:** show the checked-out marker on a patch checked out from outside VS Code (e.g. via `rad patch checkout` in a terminal). The upstream tracking that identifies the checked-out patch is configured after the branch has already switched, which the extension previously missed
+- **patches:** clear the previously checked-out patch's marker immediately when checking out another patch, instead of leaving a stale second marker behind
 
 ### ☑️ Tests
 
+- **patches:** cover the patches' general features with e2e tests. Listing in the sidebar, opening the Patch Detail webview, refreshing after out-of-band `rad` edits, and editing a patch's status, title and description from within the webview, all asserted across the sidebar, the webview and the `rad` CLI's own view of the resulting state.
+- **patches:** cover patch state synchronization with e2e tests: git-checking-out via a terminal being reflected in the list and webview, checking out the patch or the default branch from the webview and the list (including with non-conflicting and conflicting dirty working directories), and out-of-band revisions re-sorting the list without duplicating entries
+- **patches:** cover listing a patch's changed files and opening a diff editor with e2e tests
 - **aliases:** cover node-alias resolution with unit tests (address-book cache seeding, refresh-and-persist, and mapping a patch author to its alias) and an e2e assertion that a patch author renders its alias, sourced from the local node's address book, instead of a node id
+
+### 📖 Documentation
+
+- **readme:** remove all references to httpd
 
 ---
 
