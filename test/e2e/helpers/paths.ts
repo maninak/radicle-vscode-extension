@@ -21,8 +21,8 @@ export function getWorkerWorkspacePath(workerIndex: number): string {
 }
 
 /**
- * The httpd port a network-mutating worker (e.g. the clone spec) runs its own httpd on, kept
- * off the shared httpd's `httpdPort` so the two never clash.
+ * The httpd port a worker runs its own httpd on (only specs that need httpd start one).
+ * Derived from the `httpdPort` base and the worker index so concurrent workers never clash.
  */
 export function getWorkerHttpdPort(workerIndex: number): number {
   return httpdPort + 1 + workerIndex

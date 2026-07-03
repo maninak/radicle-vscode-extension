@@ -2,14 +2,16 @@ import type * as VsCode from 'vscode'
 import type { Workbench } from 'wdio-vscode-service'
 import { browser } from '@wdio/globals'
 import { $, cd } from 'zx'
-import { httpdHost, httpdPort } from '../constants'
+import { httpdHost } from '../constants'
 import { openRadicleViewContainer } from '../helpers/actions'
 import {
   areStringArraysEqual,
   expectNotificationToContain,
   expectStandardSidebarViewsToBeVisible,
 } from '../helpers/assertions'
+import { getWorkerHttpdPort } from '../helpers/paths'
 import { getFirstWelcomeViewText } from '../helpers/queries'
+import { startWorkerNodeAndHttpd, stopWorkerNodeAndHttpd } from '../helpers/testSandbox'
 
 // This worker's own node home and a valid alternative copied from it on demand. Both are
 // resolved in `before` from the per-worker env injected by the harness.
@@ -17,7 +19,6 @@ let workerNodeHomePath: string
 let workerWorkspacePath: string
 let altNodeHomePath: string
 
-const reachableHttpApiEndpoint = `http://${httpdHost}:${httpdPort}`
 const unreachableHttpApiEndpoint = 'http://127.0.0.1:6174'
 
 const pathToRadBinaryConfig = 'radicle.advanced.pathToRadBinary'
@@ -30,12 +31,19 @@ const homeWithoutIdentity = '/tmp'
 describe('Settings', () => {
   let workbench: Workbench
   let identityDid: string
+  let workerIndex: number
+  let reachableHttpApiEndpoint: string
 
   before(async () => {
     workbench = await browser.getWorkbench()
     workerNodeHomePath = process.env['RAD_E2E_NODE_HOME'] ?? ''
     workerWorkspacePath = process.env['RAD_E2E_WORKSPACE'] ?? ''
     altNodeHomePath = `${workerNodeHomePath}.alt`
+    // spin up this worker's own httpd so the reachable-endpoint test has something to hit,
+    // without the suite depending on a shared httpd being up on a fixed port
+    workerIndex = Number(process.env['RAD_E2E_WORKER_INDEX'] ?? '0')
+    await startWorkerNodeAndHttpd(workerIndex, getWorkerHttpdPort(workerIndex))
+    reachableHttpApiEndpoint = `http://${httpdHost}:${getWorkerHttpdPort(workerIndex)}`
     await ensureWorkspaceIsRadInitialized()
     identityDid = (await $`rad self --did`).stdout.trim()
   })
@@ -121,6 +129,10 @@ describe('Settings', () => {
       await expectNotificationToContain(workbench, 'Failed', 'Radicle HTTP API')
     })
   })
+
+  after(() => {
+    stopWorkerNodeAndHttpd(workerIndex)
+  })
 })
 
 /**
@@ -159,7 +171,9 @@ async function removeAltNodeHome() {
   await $`rm -rf ${altNodeHomePath}`
 }
 
-// HACK: Avoids driving the Settings UI, because currently wdio-vscode can't do that
+// HACK(wdio): sets config via the VS Code API instead of driving the Settings UI, because
+// wdio-vscode-service@6.1.4 resolves outdated locators for VS Code >= 1.100 (lexical version
+// comparison) breaking its SettingsEditor page objects. Remove when the service is fixed.
 async function setConfig(configKey: string, value: string) {
   await browser.executeWorkbench(
     async (vscode: typeof VsCode, key: string, val: string) => {

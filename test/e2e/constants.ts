@@ -20,10 +20,11 @@ export const httpdPath = join(radicleBinPath, 'radicle-httpd')
 export const backupRadCliPath = `${radCliPath}.uninstalled`
 
 export const httpdHost = '127.0.0.1'
+// base for per-worker httpd ports (see `getWorkerHttpdPort`); no httpd listens on this port
+// itself anymore, the suite no longer runs a shared httpd
 export const httpdPort = 8080
 
 export const nodePidFilePath = join(emulatedHomePath, 'radicle-node.pid')
-export const httpdPidFilePath = join(emulatedHomePath, 'radicle-httpd.pid')
 
 export const sandboxedPath = `${radicleBinPath}${delimiter}${process.env['PATH'] ?? ''}`
 export const radCliVersion = process.env['RADICLE_VERSION']?.trim() || undefined

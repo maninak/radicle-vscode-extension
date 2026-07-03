@@ -11,8 +11,6 @@ import {
   emulatedHomePath,
   httpdHost,
   httpdPath,
-  httpdPidFilePath,
-  httpdPort,
   httpdVersion,
   nodeHomePath,
   nodePidFilePath,
@@ -191,7 +189,8 @@ async function installHttpd(): Promise<void> {
 }
 
 async function createRadicleIdentity(): Promise<void> {
-  // RAD_PASSPHRASE='' (set in wdio.conf.ts) yields an unencrypted key, usable without an ssh-agent.
+  // RAD_PASSPHRASE='' (set in wdio.conf.ts) yields an unencrypted key, usable without an
+  // ssh-agent.
   await $`rad auth --alias test_user`
 }
 
@@ -220,7 +219,7 @@ function configureNodeForTesting(): void {
   fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`)
 }
 
-async function startDaemons(): Promise<void> {
+async function startSharedNode(): Promise<void> {
   // `--foreground` keeps the node attached to the child we spawn, so we can
   // SIGTERM it by PID even when `rad node stop` is unavailable (e.g. while the
   // Radicle CLI binary is moved aside for the "uninstalled" emulation).
@@ -240,28 +239,6 @@ async function startDaemons(): Promise<void> {
     },
     { timeoutMs: 30_000, label: 'the Radicle node to report running' },
   )
-
-  await assertPortIsFree(httpdHost, httpdPort)
-  spawnDaemon(httpdPath, ['--listen', `${httpdHost}:${httpdPort}`], {
-    pidFilePath: httpdPidFilePath,
-    logFilePath: join(emulatedHomePath, 'radicle-httpd.log'),
-  })
-  await waitUntil(
-    async () =>
-      await new Promise<boolean>((res) => {
-        const socket = net
-          .connect({ host: httpdHost, port: httpdPort })
-          .once('connect', () => {
-            socket.destroy()
-            res(true)
-          })
-          .once('error', () => {
-            socket.destroy()
-            res(false)
-          })
-      }),
-    { timeoutMs: 30_000, label: `httpd to listen on ${httpdHost}:${httpdPort}` },
-  )
 }
 
 /** Idempotent, never throws. Safe to call from setup, signal handlers, and onComplete. */
@@ -272,7 +249,6 @@ export async function teardownTestSandbox(): Promise<void> {
     /* ignore */
   }
   killByPidFile(nodePidFilePath)
-  killByPidFile(httpdPidFilePath)
 
   try {
     fs.rmSync(emulatedHomePath, { recursive: true, force: true })
@@ -315,18 +291,14 @@ export function teardownWorkerSandbox(workerIndex: number): void {
 }
 
 /**
- * Starts a Radicle node + httpd dedicated to one worker, on its own httpd port, so a
- * network-mutating spec (e.g. clone) can seed and serve repos without touching the shared,
- * read-only node. The worker home and its isolated `test`-network config were already
- * provisioned by `setupWorkerSandbox`. Pair every call with `stopWorkerNodeAndHttpd`.
+ * Starts a Radicle node dedicated to one worker, so a network-mutating spec can mutate
+ * Radicle state without touching the shared, read-only node. The worker home and its
+ * isolated `test`-network config were already provisioned by `setupWorkerSandbox`. Pair
+ * every call with `stopWorkerNodeAndHttpd`.
  */
-export async function startWorkerNodeAndHttpd(
-  workerIndex: number,
-  httpApiPort: number,
-): Promise<void> {
+export async function startWorkerNode(workerIndex: number): Promise<void> {
   const workerHome = getWorkerHomePath(workerIndex)
   const radCli = join(getWorkerRadicleBinPath(workerIndex), 'rad')
-  const httpd = join(getWorkerRadicleBinPath(workerIndex), 'radicle-httpd')
 
   spawnDaemon(radCli, ['node', 'start', '--foreground'], {
     pidFilePath: getWorkerNodePidFilePath(workerIndex),
@@ -344,6 +316,20 @@ export async function startWorkerNodeAndHttpd(
     },
     { timeoutMs: 30_000, label: `worker ${workerIndex}'s Radicle node to report running` },
   )
+}
+
+/**
+ * Starts a Radicle node + httpd dedicated to one worker, on its own httpd port, for specs
+ * that additionally exercise the Radicle HTTP API (e.g. clone's repo browsing).
+ */
+export async function startWorkerNodeAndHttpd(
+  workerIndex: number,
+  httpApiPort: number,
+): Promise<void> {
+  const workerHome = getWorkerHomePath(workerIndex)
+  const httpd = join(getWorkerRadicleBinPath(workerIndex), 'radicle-httpd')
+
+  await startWorkerNode(workerIndex)
 
   await assertPortIsFree(httpdHost, httpApiPort)
   spawnDaemon(httpd, ['--listen', `${httpdHost}:${httpApiPort}`], {
@@ -447,7 +433,7 @@ export async function setupTestSandbox(): Promise<void> {
     await installHttpd()
     await createRadicleIdentity()
     configureNodeForTesting()
-    await startDaemons()
+    await startSharedNode()
   } catch (error) {
     await teardownTestSandbox()
     throw error

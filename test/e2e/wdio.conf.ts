@@ -1,5 +1,6 @@
 import type { Options } from '@wdio/types'
 import { delimiter, join } from 'node:path'
+import { $ as zx } from 'zx'
 import {
   chromedriverPath,
   emulatedHomePath,
@@ -39,6 +40,12 @@ delete process.env['SSH_AUTH_SOCK']
 process.env['RAD_PASSPHRASE'] = ''
 process.env['PATH'] = sandboxedPath
 
+// zx forwards a child's stderr to the console by default, flooding the runner with git and
+// `rad` progress noise (branch switches, push hints, "patch opened" lines) from spec setup.
+// Silence it globally; failures still surface via the thrown ProcessOutput and the spec
+// reporter.
+zx.quiet = true
+
 let isTearingDown = false
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, () => {
@@ -55,11 +62,20 @@ const reporters: Options.Testrunner['reporters'] = shouldRecordVideo
   ? ['spec', ['video', { outputDir: wdioVideoPath }]]
   : ['spec']
 
-const e2eSpecs = [
+const allE2eSpecs = [
   './specs/onboarding.spec.ts',
   './specs/settings.spec.ts',
   './specs/clone.spec.ts',
+  './specs/patch-details.spec.ts',
 ]
+// Optionally run a subset locally, e.g. `RAD_E2E_ONLY_SPEC=patch-details pnpm test:e2e`
+const onlySpecFilter = process.env['RAD_E2E_ONLY_SPEC']
+const e2eSpecs = onlySpecFilter
+  ? allE2eSpecs.filter((spec) => spec.includes(onlySpecFilter))
+  : allE2eSpecs
+
+/** Specs that mutate the network, so they get their own worker node + httpd. */
+const networkMutatingSpecs = ['clone.spec.ts', 'patch-details.spec.ts']
 
 function getWorkerIndexFromSpecs(specs: string[]): number {
   const matchedIndex = e2eSpecs.findIndex((spec) =>
@@ -85,17 +101,17 @@ export const config: Options.Testrunner = {
       'extensions.autoCheckUpdates': false,
       'extensions.autoUpdate': false,
     }
-    // The clone spec mutates the network, so it talks to its own worker-httpd (brought up in
-    // the spec's `before`) rather than the shared read-only one. Set at launch so the
-    // extension resolves it during activation, instead of depending on a runtime config
-    // change landing.
-    if (spec.endsWith('clone.spec.ts')) {
+    // A network-mutating spec talks to its own worker-httpd (brought up in the spec's
+    // `before`) rather than the shared read-only one. Set at launch so the extension
+    // resolves it during activation, instead of depending on a runtime config change
+    // landing.
+    if (networkMutatingSpecs.some((mutatingSpec) => spec.endsWith(mutatingSpec))) {
       userSettings['radicle.advanced.httpApiEndpoint'] =
         `http://${httpdHost}:${getWorkerHttpdPort(workerIndex)}`
-      // The extension runs `rad clone` in the extension host, whose PATH and HOME are
+      // The extension runs `rad` commands in the extension host, whose PATH and HOME are
       // platform-dependent: on macOS, VS Code resolves the login shell's environment, which
       // omits the sandbox bin dir, so `rad` is not found and the default node home is wrong.
-      // Pin the binary and node home so the clone uses this worker's running, seeded node.
+      // Pin the binary and node home so `rad` uses this worker's running, seeded node.
       userSettings['radicle.advanced.pathToRadBinary'] = join(
         getWorkerRadicleBinPath(workerIndex),
         'rad',
