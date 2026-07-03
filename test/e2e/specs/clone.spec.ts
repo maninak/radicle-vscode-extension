@@ -102,6 +102,10 @@ describe('Cloning a Radicle repo', () => {
 
   it('surfaces an error when the Radicle HTTP API is unreachable', async () => {
     stopWorkerNodeAndHttpd(workerIndex)
+    // a never-before-fetched endpoint, so there's nothing cached to gracefully fall back to
+    // and the error is guaranteed to surface, unlike re-pointing at this same worker's now-
+    // stopped httpd, which the prior test already populated the in-memory repo list cache for
+    await setExtensionHttpApiEndpoint(`http://${httpdHost}:1`)
     await workbench.executeCommand('Clone a Radicle Repository Locally')
 
     await expectNotificationToContain(workbench, 'Failed', 'Radicle HTTP API')
