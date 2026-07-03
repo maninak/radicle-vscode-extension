@@ -224,7 +224,7 @@ type ExecRadResult = XOR<
   { errorCode: string | number; stdout?: string; stderr?: string }
 >
 
-const defaultRetry = { retries: 3, intervalMs: 250 } as const
+const defaultRetry = { retries: 6, intervalMs: 400 } as const
 
 /**
  * Executes commands using the `rad` CLI binary directly, without spawning a shell, optionally
