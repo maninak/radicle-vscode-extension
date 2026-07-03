@@ -558,9 +558,9 @@
           "radicle.advanced.httpApiEndpoint": {
             "scope": "machine-overridable",
             "type": "string",
-            "default": "http://127.0.0.1:8080",
+            "default": "https://iris.radicle.network",
             "format": "uri",
-            "markdownDescription": "Specifies the endpoint to the root of the Radicle HTTP API connected to a seed node. This is commonly served via `radicle-httpd` and can be any Fully-Qualified Domain Name (FQDN) i.e. $protocol://$host:$port/$path ."
+            "markdownDescription": "Specifies the endpoint to the root of the Radicle HTTP API connected to a seed node, used to browse repos available for cloning from the network. This is commonly served via `radicle-httpd` and can be any Fully-Qualified Domain Name (FQDN) i.e. $protocol://$host:$port/$path ."
           }
         }
       }

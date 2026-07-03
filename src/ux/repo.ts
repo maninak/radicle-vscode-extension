@@ -1,49 +1,17 @@
 import { sep } from 'node:path'
+import { effect, stop } from '@vue/reactivity'
 import { commands, ProgressLocation, type QuickPickItem, Uri, window } from 'vscode'
-import { execRad, fetchFromHttpd } from '../helpers'
+import { execRad } from '../helpers'
+import { type RepoListItem, useRepoListStore } from '../stores'
 import { getRepoRoot, log, showLog } from '../utils'
 import { notifyUserAboutFetchError } from './httpdConnection'
 
+interface RepoQuickPickItem extends QuickPickItem {
+  rid: string
+}
+
 export async function pickAndCloneRadicleRepo(): Promise<void> {
-  const { data: repos, error } = await window.withProgress(
-    {
-      location: ProgressLocation.Window,
-      title: `‎$(radicle-logo) Fetching list of repos available for cloning…`,
-    },
-    async () => await fetchFromHttpd('/repos', { query: { show: 'all' } }),
-  )
-  if (!repos) {
-    notifyUserAboutFetchError(error)
-
-    return
-  }
-
-  // eslint-disable-next-line prettier/prettier
-  interface RepoQuickPickItem extends QuickPickItem { rid: string }
-  const qPickItems: RepoQuickPickItem[] = repos
-    .sort((p1, p2) => p2.seeding - p1.seeding)
-    .flatMap((repo) => {
-      const project = repo.payloads['xyz.radicle.project']?.data
-      if (!project) {
-        return []
-      }
-
-      const qPickItem: RepoQuickPickItem = {
-        label: project.name,
-        description: `$(radio-tower) ${repo.seeding} | ${repo.rid}`,
-        detail: project.description,
-        rid: repo.rid,
-      }
-
-      return qPickItem
-    })
-
-  const selectedRepo = await window.showQuickPick(qPickItems, {
-    placeHolder: 'Choose a Radicle repo to clone locally',
-    ignoreFocusOut: true,
-    matchOnDescription: true,
-    matchOnDetail: true,
-  })
+  const selectedRepo = await pickRepoToClone()
   if (!selectedRepo) {
     return
   }
@@ -113,4 +81,61 @@ export async function pickAndCloneRadicleRepo(): Promise<void> {
   const shouldOpenInNewWindow = await window.showInformationMessage(msg, buttonOpenInVscode)
   shouldOpenInNewWindow &&
     commands.executeCommand('vscode.openFolder', cloneTargetDir, { forceNewWindow: true })
+}
+
+/**
+ * Offers the machine-local cache of cloneable repos immediately, while a throttled background
+ * refresh (see `repoListStore`) keeps it current: the picker shows a spinner and its items
+ * grow live as fresh pages arrive. Notifies the user of a fetch error only when there's
+ * nothing cached to offer, so being offline still lets them clone from cache.
+ *
+ * @returns the repo the user picked, or `undefined` if they dismissed the picker.
+ */
+async function pickRepoToClone(): Promise<RepoQuickPickItem | undefined> {
+  const repoListStore = useRepoListStore()
+
+  const quickPick = window.createQuickPick<RepoQuickPickItem>()
+  quickPick.placeholder = 'Choose a Radicle repo to clone locally'
+  quickPick.matchOnDescription = true
+  quickPick.matchOnDetail = true
+  quickPick.ignoreFocusOut = true
+
+  // `getRepos()` is already sorted most-seeded-first and capped by the store, so just map it.
+  let isPickerOpen = true
+  const syncPickerToStore = effect(() => {
+    quickPick.busy = repoListStore.isRefreshing
+    quickPick.items = repoListStore.getRepos().map(toRepoItem)
+  })
+  quickPick.show()
+
+  // Refresh in the background so picking a cached repo isn't blocked on the full fetch.
+  // Surface a fetch error only while the picker is still open with nothing to offer, so being
+  // offline still lets the user clone from cache and a late failure never toasts after they've
+  // moved on.
+  void repoListStore.refreshRepoList().then((result) => {
+    if (isPickerOpen && result?.error && repoListStore.getRepos().length === 0) {
+      notifyUserAboutFetchError(result.error)
+      quickPick.hide()
+    }
+  })
+
+  const selectedRepo = await new Promise<RepoQuickPickItem | undefined>((resolve) => {
+    quickPick.onDidAccept(() => resolve(quickPick.selectedItems[0]))
+    quickPick.onDidHide(() => resolve(undefined))
+  })
+
+  isPickerOpen = false
+  stop(syncPickerToStore)
+  quickPick.dispose()
+
+  return selectedRepo
+}
+
+function toRepoItem(repo: RepoListItem): RepoQuickPickItem {
+  return {
+    label: repo.name,
+    description: `$(radio-tower) ${repo.seeding} | ${repo.rid}`,
+    detail: repo.description,
+    rid: repo.rid,
+  }
 }

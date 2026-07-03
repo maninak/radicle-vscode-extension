@@ -1,100 +1,95 @@
 import type { Mock } from 'vitest'
-import type { Repo } from '../../../src/types'
+import type { RepoListItem } from '../../../src/stores/repoListStore'
+import { ref, shallowRef } from '@vue/reactivity'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { commands, window } from 'vscode'
-import { execRad, fetchFromHttpd } from '../../../src/helpers'
+import { execRad } from '../../../src/helpers'
 import { getRepoRoot, showLog } from '../../../src/utils'
 import { notifyUserAboutFetchError } from '../../../src/ux/httpdConnection'
 import { pickAndCloneRadicleRepo } from '../../../src/ux/repo'
 
-vi.mock('../../../src/helpers', () => ({ execRad: vi.fn(), fetchFromHttpd: vi.fn() }))
+// The repo picker reads its list and refresh state from `repoListStore`. We back the mocked
+// store with real `@vue/reactivity` refs so the picker's reactive wiring (live items, busy
+// spinner) is exercised: mutating a ref here re-runs the effect inside the code under test.
+const storeRepos = shallowRef<RepoListItem[]>([])
+const storeIsRefreshing = ref(false)
+const refreshRepoListMock = vi.fn<() => Promise<{ error?: unknown } | undefined>>()
+
+vi.mock('../../../src/helpers', () => ({ execRad: vi.fn() }))
 vi.mock('../../../src/utils', () => ({ getRepoRoot: vi.fn(), log: vi.fn(), showLog: vi.fn() }))
 vi.mock('../../../src/ux/httpdConnection', () => ({ notifyUserAboutFetchError: vi.fn() }))
+vi.mock('../../../src/stores', () => ({
+  useRepoListStore: () => ({
+    getRepos: () => storeRepos.value,
+    get isRefreshing() {
+      return storeIsRefreshing.value
+    },
+    refreshRepoList: async () => await refreshRepoListMock(),
+  }),
+}))
 
-interface PickItem {
+interface RepoQuickPickItem {
   label: string
   description: string
   detail?: string
   rid: string
 }
-
-interface OpenDialogOptions {
-  title: string
-  openLabel: string
-  canSelectMany: boolean
-  canSelectFiles: boolean
-  canSelectFolders: boolean
+interface FakeQuickPick {
+  items: RepoQuickPickItem[]
+  selectedItems: RepoQuickPickItem[]
+  busy: boolean
+  onDidAccept: Mock<(callback: () => void) => { dispose: Mock }>
+  onDidHide: Mock<(callback: () => void) => { dispose: Mock }>
+  show: Mock
+  hide: Mock
+  dispose: Mock
 }
-
 interface ExecRadOptions {
   cwd: string
   timeout: number
   shouldLog: boolean
 }
 
-// `vscode` and the heavily-overloaded helpers carry class and union types that fight the mock
-// setters, so we treat the (already mocked) functions as plainly-typed mocks. The real types
-// still guard the code under test at type-check time.
-const fetchFromHttpdMock = fetchFromHttpd as unknown as Mock
 const getRepoRootMock = getRepoRoot as unknown as Mock
 const showLogMock = showLog as unknown as Mock
 const notifyUserAboutFetchErrorMock = notifyUserAboutFetchError as unknown as Mock
 const showInformationMessageMock = window.showInformationMessage as unknown as Mock
 const showErrorMessageMock = window.showErrorMessage as unknown as Mock
 const withProgressMock = window.withProgress as unknown as Mock
+const createQuickPickMock = window.createQuickPick as unknown as Mock<() => FakeQuickPick>
 const execRadMock = execRad as unknown as Mock<
   (args: string[], options: ExecRadOptions) => unknown
 >
-const showQuickPickMock = window.showQuickPick as unknown as Mock<
-  (items: PickItem[], options: Record<string, unknown>) => Promise<PickItem | undefined>
->
 const showOpenDialogMock = window.showOpenDialog as unknown as Mock<
-  (options: OpenDialogOptions) => Promise<{ fsPath: string }[] | undefined>
+  (options: unknown) => Promise<{ fsPath: string }[] | undefined>
 >
-const executeCommandMock = commands.executeCommand as unknown as Mock<
+const executeVsCodeCmdMock = commands.executeCommand as unknown as Mock<
   (command: string, uri: { fsPath: string }, options: { forceNewWindow: boolean }) => unknown
 >
 
-function makeRepo(props: {
-  rid: string
-  name: string
-  description: string
-  seeding: number
-}): Repo {
-  return {
-    rid: props.rid,
-    payloads: {
-      'xyz.radicle.project': {
-        data: { name: props.name, description: props.description, defaultBranch: 'main' },
-        meta: {
-          head: 'deadbeef',
-          patches: { open: 0, draft: 0, archived: 0, merged: 0 },
-          issues: { open: 0, closed: 0 },
-        },
-      },
-    },
-    delegates: [],
-    threshold: 1,
-    seeding: props.seeding,
-    visibility: { type: 'public' },
-    refs: { tags: {}, refs: {} },
-  }
+const heartwood: RepoListItem = {
+  rid: 'rad:zHEART',
+  name: 'heartwood',
+  description: 'Radicle Heartwood Protocol & Stack',
+  seeding: 42,
 }
 
-function resolveRepos(repos: Repo[]): void {
-  fetchFromHttpdMock.mockResolvedValue({ data: repos })
+/** Kicks off the clone flow and returns the just-created (still-open) fake quick pick. */
+function startClone(): { done: Promise<void>; quickPick: FakeQuickPick } {
+  const done = pickAndCloneRadicleRepo()
+  const quickPick = createQuickPickMock.mock.results.at(-1)!.value as FakeQuickPick
+
+  return { done, quickPick }
+}
+
+function acceptFirstItem(quickPick: FakeQuickPick): void {
+  quickPick.selectedItems = [quickPick.items[0]!]
+  quickPick.onDidAccept.mock.calls[0]![0]()
 }
 
 function pickRepoLocation(fsPath: string): void {
   showOpenDialogMock.mockResolvedValue([{ fsPath }])
 }
-
-const heartwood = makeRepo({
-  rid: 'rad:zHEART',
-  name: 'heartwood',
-  description: 'Radicle Heartwood Protocol & Stack',
-  seeding: 42,
-})
 
 describe('pickAndCloneRadicleRepo()', () => {
   beforeEach(() => {
@@ -102,72 +97,126 @@ describe('pickAndCloneRadicleRepo()', () => {
     // Run the wrapped task so the progress wrapper is transparent to the assertions.
     withProgressMock.mockImplementation((_options: unknown, task: () => unknown) => task())
     getRepoRootMock.mockReturnValue(undefined)
+    storeRepos.value = []
+    storeIsRefreshing.value = false
+    refreshRepoListMock.mockResolvedValue(undefined)
     delete process.env['RAD_E2E_CLONE_PARENT_DIR']
   })
 
-  describe('The repo list', () => {
-    it('sorts items by seed count, descending', async () => {
-      resolveRepos([
-        makeRepo({ rid: 'rad:zLOW', name: 'low', description: '', seeding: 5 }),
-        makeRepo({ rid: 'rad:zHIGH', name: 'high', description: '', seeding: 50 }),
-        makeRepo({ rid: 'rad:zMID', name: 'mid', description: '', seeding: 20 }),
-      ])
-      showQuickPickMock.mockResolvedValue(undefined)
+  describe('The offered repo list', () => {
+    it("renders the store's items in the order it provides (the store sorts, not the picker)", async () => {
+      // The store returns repos already capped and sorted most-seeded-first, so the picker
+      // must render them verbatim without re-sorting.
+      storeRepos.value = [
+        { rid: 'rad:zHIGH', name: 'high', description: '', seeding: 50 },
+        { rid: 'rad:zMID', name: 'mid', description: '', seeding: 20 },
+        { rid: 'rad:zLOW', name: 'low', description: '', seeding: 5 },
+      ]
 
-      await pickAndCloneRadicleRepo()
-      const items = showQuickPickMock.mock.calls[0]![0]
+      const { done, quickPick } = startClone()
 
-      expect(items.map((item) => item.label)).toEqual(['high', 'mid', 'low'])
+      expect(quickPick.items.map((item) => item.label)).toEqual(['high', 'mid', 'low'])
+      quickPick.hide()
+      await done
+    })
+
+    it('maps each repo into a labelled, seed-annotated pick item', async () => {
+      storeRepos.value = [heartwood]
+
+      const { done, quickPick } = startClone()
+
+      expect(quickPick.items[0]).toMatchObject({
+        label: 'heartwood',
+        detail: 'Radicle Heartwood Protocol & Stack',
+        rid: 'rad:zHEART',
+      })
+
+      expect(quickPick.items[0]!.description).toContain('rad:zHEART')
+      quickPick.hide()
+      await done
+    })
+
+    it('reflects the store refresh state as the picker busy spinner', async () => {
+      const { done, quickPick } = startClone()
+
+      expect(quickPick.busy).toBe(false)
+
+      storeIsRefreshing.value = true
+
+      expect(quickPick.busy).toBe(true)
+
+      storeIsRefreshing.value = false
+
+      expect(quickPick.busy).toBe(false)
+      quickPick.hide()
+      await done
+    })
+
+    it('updates the offered items live as the background refresh brings in new repos', async () => {
+      storeRepos.value = [heartwood]
+
+      const { done, quickPick } = startClone()
+
+      expect(quickPick.items).toHaveLength(1)
+
+      storeRepos.value = [
+        heartwood,
+        { rid: 'rad:zNEW', name: 'newlyfetched', description: '', seeding: 1 },
+      ]
+
+      expect(quickPick.items).toHaveLength(2)
+      expect(quickPick.items.map((item) => item.label)).toContain('newlyfetched')
+      quickPick.hide()
+      await done
     })
   })
 
-  describe('When fetching the repo list fails', () => {
-    it('notifies about the error and neither shows a picker nor clones', async () => {
+  describe('When the background refresh fails', () => {
+    it('notifies and hides the picker when nothing is cached to offer', async () => {
       const error = new Error('httpd unreachable')
-      fetchFromHttpdMock.mockResolvedValue({ error })
+      refreshRepoListMock.mockResolvedValue({ error })
+      storeRepos.value = []
 
-      await pickAndCloneRadicleRepo()
+      const { done } = startClone()
+      await done
 
       expect(notifyUserAboutFetchErrorMock).toHaveBeenCalledWith(error)
-      expect(showQuickPickMock).not.toHaveBeenCalled()
       expect(execRadMock).not.toHaveBeenCalled()
     })
-  })
 
-  describe('Authentication', () => {
-    // Regression: cloning used to be gated behind an authentication flow it did not need. The
-    // command must reach the network to list repos with no prior identity granted.
-    it('lists repos without first requiring an authenticated identity', async () => {
-      resolveRepos([])
-      showQuickPickMock.mockResolvedValue(undefined)
+    it('keeps offering the cached repos without notifying', async () => {
+      refreshRepoListMock.mockResolvedValue({ error: new Error('httpd unreachable') })
+      storeRepos.value = [heartwood]
 
-      await pickAndCloneRadicleRepo()
+      const { done, quickPick } = startClone()
+      await Promise.resolve()
 
-      expect(fetchFromHttpdMock).toHaveBeenCalledWith('/repos', { query: { show: 'all' } })
+      expect(notifyUserAboutFetchErrorMock).not.toHaveBeenCalled()
+      expect(quickPick.hide).not.toHaveBeenCalled()
+      quickPick.hide()
+      await done
     })
   })
 
   describe('When the user cancels', () => {
     it('does nothing if no repo is picked', async () => {
-      resolveRepos([heartwood])
-      showQuickPickMock.mockResolvedValue(undefined)
+      storeRepos.value = [heartwood]
 
-      await pickAndCloneRadicleRepo()
+      const { done, quickPick } = startClone()
+      quickPick.hide()
+      await done
 
       expect(showOpenDialogMock).not.toHaveBeenCalled()
       expect(execRadMock).not.toHaveBeenCalled()
     })
 
     it('does not clone if no folder is picked', async () => {
-      resolveRepos([heartwood])
-      showQuickPickMock.mockResolvedValue({
-        rid: 'rad:zHEART',
-        label: 'heartwood',
-        description: '',
-      })
+      storeRepos.value = [heartwood]
       showOpenDialogMock.mockResolvedValue(undefined)
 
-      await pickAndCloneRadicleRepo()
+      const { done, quickPick } = startClone()
+      acceptFirstItem(quickPick)
+      await done
 
       expect(execRadMock).not.toHaveBeenCalled()
     })
@@ -175,19 +224,16 @@ describe('pickAndCloneRadicleRepo()', () => {
 
   describe('Cloning', () => {
     beforeEach(() => {
-      resolveRepos([heartwood])
-      showQuickPickMock.mockResolvedValue({
-        rid: 'rad:zHEART',
-        label: 'heartwood',
-        description: '',
-      })
+      storeRepos.value = [heartwood]
       pickRepoLocation('/home/me/code')
       execRadMock.mockReturnValue({ stdout: '' })
       showInformationMessageMock.mockResolvedValue(undefined)
     })
 
     it('checks out into a subfolder named after the repo, inside the picked location', async () => {
-      await pickAndCloneRadicleRepo()
+      const { done, quickPick } = startClone()
+      acceptFirstItem(quickPick)
+      await done
       const [args, options] = execRadMock.mock.calls[0]!
 
       expect(args[2]).toBe('/home/me/code/heartwood')
@@ -197,8 +243,10 @@ describe('pickAndCloneRadicleRepo()', () => {
     it('opens exactly the checked-out folder when the user chooses to open it', async () => {
       showInformationMessageMock.mockResolvedValue('Open in new window')
 
-      await pickAndCloneRadicleRepo()
-      const [command, uri, options] = executeCommandMock.mock.calls[0]!
+      const { done, quickPick } = startClone()
+      acceptFirstItem(quickPick)
+      await done
+      const [command, uri, options] = executeVsCodeCmdMock.mock.calls[0]!
 
       expect(command).toBe('vscode.openFolder')
       expect(uri.fsPath).toBe('/home/me/code/heartwood')
@@ -208,12 +256,7 @@ describe('pickAndCloneRadicleRepo()', () => {
 
   describe('When cloning fails', () => {
     beforeEach(() => {
-      resolveRepos([heartwood])
-      showQuickPickMock.mockResolvedValue({
-        rid: 'rad:zHEART',
-        label: 'heartwood',
-        description: '',
-      })
+      storeRepos.value = [heartwood]
       pickRepoLocation('/home/me/code')
       execRadMock.mockReturnValue({ errorCode: 1 })
     })
@@ -221,17 +264,21 @@ describe('pickAndCloneRadicleRepo()', () => {
     it('reports the failure, offers the log, and opens no folder', async () => {
       showErrorMessageMock.mockResolvedValue('Show output')
 
-      await pickAndCloneRadicleRepo()
+      const { done, quickPick } = startClone()
+      acceptFirstItem(quickPick)
+      await done
 
       expect(showErrorMessageMock).toHaveBeenCalled()
       expect(showLogMock).toHaveBeenCalled()
-      expect(executeCommandMock).not.toHaveBeenCalled()
+      expect(executeVsCodeCmdMock).not.toHaveBeenCalled()
     })
 
     it('does not open the log when the failure prompt is dismissed', async () => {
       showErrorMessageMock.mockResolvedValue(undefined)
 
-      await pickAndCloneRadicleRepo()
+      const { done, quickPick } = startClone()
+      acceptFirstItem(quickPick)
+      await done
 
       expect(showLogMock).not.toHaveBeenCalled()
     })
@@ -239,12 +286,7 @@ describe('pickAndCloneRadicleRepo()', () => {
 
   describe('The e2e clone-destination seam', () => {
     beforeEach(() => {
-      resolveRepos([heartwood])
-      showQuickPickMock.mockResolvedValue({
-        rid: 'rad:zHEART',
-        label: 'heartwood',
-        description: '',
-      })
+      storeRepos.value = [heartwood]
       execRadMock.mockReturnValue({ stdout: '' })
       showInformationMessageMock.mockResolvedValue(undefined)
     })
@@ -252,7 +294,9 @@ describe('pickAndCloneRadicleRepo()', () => {
     it('clones into the env-provided folder without opening the native picker', async () => {
       process.env['RAD_E2E_CLONE_PARENT_DIR'] = '/tmp/e2e-clones'
 
-      await pickAndCloneRadicleRepo()
+      const { done, quickPick } = startClone()
+      acceptFirstItem(quickPick)
+      await done
       const [args, options] = execRadMock.mock.calls[0]!
 
       expect(showOpenDialogMock).not.toHaveBeenCalled()
@@ -263,7 +307,9 @@ describe('pickAndCloneRadicleRepo()', () => {
     it('falls back to the native picker when the env var is unset', async () => {
       showOpenDialogMock.mockResolvedValue(undefined)
 
-      await pickAndCloneRadicleRepo()
+      const { done, quickPick } = startClone()
+      acceptFirstItem(quickPick)
+      await done
 
       expect(showOpenDialogMock).toHaveBeenCalled()
     })

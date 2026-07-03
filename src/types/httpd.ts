@@ -42,6 +42,18 @@ export interface Repo {
   refs: { tags: Record<string, string>; refs: Record<string, string> }
 }
 
+/**
+ * A repo as returned by the pre-v3 httpd `/projects` endpoint (e.g. radicle.at, apiVersion 1),
+ * which is flatter than the current `/repos` `Repo`. Only the fields we consume are typed.
+ */
+export interface HttpdProject {
+  id: `rad:${string}`
+  name: string
+  description: string
+  seeding: number
+  visibility: { type: 'public' | 'private' }
+}
+
 export interface RepoPayload {
   data: {
     name: string
@@ -175,6 +187,14 @@ interface CodeLocation {
   }
 }
 
+export interface BlobResponse {
+  binary: boolean
+  name: string
+  path: string
+  content?: string
+  lastCommit: LastCommit
+}
+
 export interface DiffResponse {
   diff: Changeset
   commits: Commit[]
@@ -281,7 +301,8 @@ export interface LastCommit {
   summary: string
   description: string
   message: string
-  // TODO: check why author and committer here are the same and on Commit they are not, refactor accordingly
+  // TODO: check why author and committer here are the same and on Commit they are not,
+  // refactor accordingly
   author: { name: string; email: string; time: number }
   committer: { name: string; email: string; time: number }
   parents: string[]

@@ -10,11 +10,13 @@
 
 - **httpd:** remove the need for httpd. Radicle Patches now work fully offline, without needing `radicle-httpd` to be installed or running. All patch data (listings, details, file diffs) is sourced directly from the local Radicle node using the `rad` CLI and git. The HTTP API remains supported as an optional, alternative source of network state for upcoming features.
 - **aliases:** keep showing node aliases (for patch authors, reviewers, etc.), previously sourced by httpd. This is done using an OS-agnostic WASM sqlite reader, not with a native module, to retain multi-OS support, including for Windows and no per-distro releases. It accesses the local node's address book sqlite database, and stores them in a vscode-native, machine-local cache for instant rendering on next launch.
+- **commands:**  list every known repo from any seed ever configured when cloning a repo, not just the ones already present in the local Radicle storage. The list is sourced from the configured HTTP API endpoint and loads instantly from a machine-local cache (offline included), with a background refresh at most once a day that shows a spinner while fetching and grows the offered list live as results arrive. The full list is cached on disk while the most widely-seeded repos are the ones offered, so the picker stays manageable as the network grows.
 
 ### 🩹 Fixes
 
 - **patches:** show the checked-out marker on a patch checked out from outside VS Code (e.g. via `rad patch checkout` in a terminal). The upstream tracking that identifies the checked-out patch is configured after the branch has already switched, which the extension previously missed
 - **patches:** clear the previously checked-out patch's marker immediately when checking out another patch, instead of leaving a stale second marker behind
+- **httpd:** correctly parse multi-digit major versions of the Radicle HTTP API (e.g. `10.x`) when adapting requests for older APIs
 
 ### ☑️ Tests
 
@@ -22,6 +24,8 @@
 - **patches:** cover patch state synchronization with e2e tests: git-checking-out via a terminal being reflected in the list and webview, checking out the patch or the default branch from the webview and the list (including with non-conflicting and conflicting dirty working directories), and out-of-band revisions re-sorting the list without duplicating entries
 - **patches:** cover listing a patch's changed files and opening a diff editor with e2e tests
 - **aliases:** cover node-alias resolution with unit tests (address-book cache seeding, refresh-and-persist, and mapping a patch author to its alias) and an e2e assertion that a patch author renders its alias, sourced from the local node's address book, instead of a node id
+- **clone:** cover the cloneable-repo cache and picker with unit tests (version-adaptive pagination, the once-a-day refresh throttle, the full-on-disk vs capped-in-memory split, live list growth, and offline error handling) and rework the clone e2e for the new live-updating picker
+- **e2e:** silence the git and `rad` command output that the test runner echoed during patch setup, de-noising the e2e logs (failures still surface their output)
 
 ### 📖 Documentation
 
