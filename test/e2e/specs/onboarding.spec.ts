@@ -1,5 +1,6 @@
 import type * as VsCode from 'vscode'
 import type { Workbench } from 'wdio-vscode-service'
+import { join } from 'node:path'
 import { browser, expect } from '@wdio/globals'
 import { $, cd } from 'zx'
 import { openRadicleViewContainer } from '../helpers/actions'
@@ -123,7 +124,76 @@ describe('Onboarding Flow', () => {
       await expectStandardSidebarViewsToBeVisible(workbench)
     })
   })
+
+  // Regression for #172: Node's file watchers can't fire for a path whose parent dir didn't
+  // exist when we started watching (e.g. rad installed _after_ the extension loaded), so the
+  // extension falls back to polling. Point it at a binary under a not-yet-existing dir, then
+  // create the binary there and assert it gets picked up with no window reload.
+  describe('Radicle CLI appearing at a path that did not exist when the extension loaded,', () => {
+    const nodeHome = process.env['RAD_E2E_NODE_HOME'] ?? ''
+    const realRadCli = join(nodeHome, 'bin', 'rad')
+    const lateBinDir = join(nodeHome, 'late-bin')
+    const lateRadCli = join(lateBinDir, 'rad')
+
+    before(async () => {
+      await setPathToRadBinaryConfig(lateRadCli)
+    })
+
+    after(async () => {
+      await setPathToRadBinaryConfig(undefined)
+      await $`rm -rf ${lateBinDir}`
+    })
+
+    it('reports the CLI as unresolvable while the configured path is still missing', async () => {
+      await openRadicleViewContainer(workbench)
+
+      await browser.waitUntil(
+        async () =>
+          (await getFirstWelcomeViewText(workbench)).some((text) =>
+            text.includes('Failed resolving the Radicle CLI binary'),
+          ),
+        {
+          timeoutMsg:
+            'expected the "CLI unresolvable" guide while the configured path is missing',
+        },
+      )
+    })
+
+    it('picks up the CLI once it appears there, with no reload (via the fallback poll)', async () => {
+      await $`mkdir -p ${lateBinDir}`
+      await $`cp ${realRadCli} ${lateRadCli}`
+      await $`chmod +x ${lateRadCli}`
+
+      // the poll re-checks every few seconds, so allow comfortably more than one interval
+      await browser.waitUntil(
+        async () =>
+          (await getFirstWelcomeViewText(workbench)).some((text) =>
+            text.includes('Failed resolving the Radicle CLI binary'),
+          ) === false,
+        {
+          timeout: 20_000,
+          timeoutMsg:
+            'expected the extension to pick up the newly-created rad binary via its poll',
+        },
+      )
+    })
+  })
 })
+
+async function setPathToRadBinaryConfig(path: string | undefined): Promise<void> {
+  await browser.executeWorkbench(
+    async (vscode: typeof VsCode, configuredPath: string | undefined) => {
+      await vscode.workspace
+        .getConfiguration()
+        .update(
+          'radicle.advanced.pathToRadBinary',
+          configuredPath,
+          vscode.ConfigurationTarget.Global,
+        )
+    },
+    path,
+  )
+}
 
 async function initGitRepo() {
   const workspacePath = process.env['RAD_E2E_WORKSPACE'] ?? ''
