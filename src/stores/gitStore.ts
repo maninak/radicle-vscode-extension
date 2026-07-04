@@ -1,35 +1,27 @@
 import { computed, ref } from '@vue/reactivity'
 import { createPinia, defineStore, setActivePinia } from 'pinia'
-import { getCurrentGitBranch, getCurrentGitUpstreamBranch } from '../utils'
+import { getCurrentGitBranchAndUpstream } from '../utils'
 
 setActivePinia(createPinia())
 
 /*
- *TODO: maninak see if I can use native git plugin's getters instead of my own utils
- * and if they are faster (mine are slow ~20-40ms for each util call)
- *
- * Resources:
- * - https://github.com/walles/git-commit-message-plus/blob/83bebe0321e99f616a08d9a043f2cdd790d5e26b/src/extension.ts#L82-L118
- * - https://github.com/microsoft/vscode/blob/08d383346c18f6b20cb74219611f7c1b590c35b1/extensions/git/README.md#git-integration-for-visual-studio-code
- * - https://github.com/microsoft/vscode/blob/main/extensions/git/src/api/api1.ts#L160
- * - https://github.com/microsoft/vscode-pull-request-github/blob/0068c135d1c3e5ce601c1d5c7f7007904e59901e/src/extension.ts#L53
- * - https://github.com/Microsoft/vscode/blob/main/extensions/git/src/api/git.d.ts
- * - https://code.visualstudio.com/api/references/vscode-api#extensions
- * - https://stackoverflow.com/a/60238771/5015955
+ * Sources the workspace repo's current branch and upstream by shelling out to git directly,
+ * with our file watchers as the invalidation trigger (see `fileWatcher.ts`). VS Code's built-in
+ * Git extension API was evaluated and rejected for this: its `repository.state` is a debounced
+ * cache that refreshes only while the window is focused, so it goes stale exactly when `rad`
+ * mutates git state out of band (e.g. `rad patch checkout` in a terminal). GitLens reads git
+ * the same way we do, for the same reason. See issue #185 for the full investigation.
  */
-
 export const useGitStore = defineStore('gitStore', () => {
   const currentBranchRecomputeSignal = ref(0)
-  const currentBranch = computed(() => {
+
+  const currentBranchAndUpstream = computed(() => {
     void currentBranchRecomputeSignal.value
 
-    return getCurrentGitBranch()
+    return getCurrentGitBranchAndUpstream()
   })
-  const currentUpstreamBranch = computed(() => {
-    void currentBranchRecomputeSignal.value
-
-    return getCurrentGitUpstreamBranch()
-  })
+  const currentBranch = computed(() => currentBranchAndUpstream.value?.branch)
+  const currentUpstreamBranch = computed(() => currentBranchAndUpstream.value?.upstream)
 
   function refreshCurentBranch() {
     currentBranchRecomputeSignal.value++
