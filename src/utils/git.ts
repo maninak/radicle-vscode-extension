@@ -22,34 +22,28 @@ export function getRepoRoot(): string | undefined {
 }
 
 /**
- * Resolves the current branch name if in a Git repository.
+ * Resolves the current branch's name and its upstream branch (if any) with a single git
+ * invocation, if in a Git repository.
  *
  * @example
  * ```ts
- * getCurrentGitBranch() // 'feat/75_fix-pesky-bug'
+ * getCurrentGitBranchAndUpstream() // { branch: 'feat/75_fix-pesky-bug', upstream: 'rad/patches/abc123' }
  * ```
  */
-export function getCurrentGitBranch(): string | undefined {
-  const currentBranch = exec('git rev-parse --abbrev-ref HEAD', { cwd: '$workspaceDir' })
+export function getCurrentGitBranchAndUpstream():
+  | { branch: string; upstream: string | undefined }
+  | undefined {
+  const nameAndUpstream = exec('git rev-parse --abbrev-ref --symbolic-full-name @ @{u} --', {
+    cwd: '$workspaceDir',
+  })
+  if (nameAndUpstream) {
+    const [branch, upstream] = nameAndUpstream.split('\n')
 
-  return currentBranch
-}
+    return branch ? { branch, upstream } : undefined
+  }
 
-/**
- * Resolves the upstream branch of the currently checked out branch if in a Git repository.
- *
- * @example
- * ```ts
- * getCurrentGitUpstreamBranch() // 'origin/main'
- * ```
- */
-export function getCurrentGitUpstreamBranch(): string | undefined {
-  const currentUpstreamBranch = exec(
-    `git for-each-ref --format='%(upstream:short)' "$(git symbolic-ref -q HEAD)"`,
-    {
-      cwd: '$workspaceDir',
-    },
-  )
+  // the single-call form errors whenever no upstream is configured, so re-resolve just the name
+  const branch = exec('git rev-parse --abbrev-ref HEAD', { cwd: '$workspaceDir' })
 
-  return currentUpstreamBranch
+  return branch ? { branch, upstream: undefined } : undefined
 }
