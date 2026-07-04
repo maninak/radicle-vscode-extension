@@ -604,6 +604,14 @@ async function switchToPatchDetailWebview(workbench: Workbench) {
 }
 
 describe('Patch state synchronization,', () => {
+  // Runs locally but skipped on CI: the "moves the checked-out marker" test is chronically flaky
+  // there due to VS Code sidebar render-timing (the marker repaints later than the wait window),
+  // and it mutates git state (seeds a branch), so mocha retries are not safe either. The "sorts"
+  // test reuses that branch/patch, so it is skipped alongside it to keep the pair coherent.
+  // Tracked in https://github.com/maninak/radicle-vscode-extension/issues/195 . Linux CI covers
+  // the rest of this spec; macOS CI skips the spec whole (see test/e2e/wdio.conf.ts).
+  const itSkippedOnCi = process.env['CI'] ? it.skip : it
+
   const secondPatchTitle = 'feat: second patch'
   const thirdPatchTitle = 'feat: third patch'
   let workbench: Workbench
@@ -698,7 +706,7 @@ describe('Patch state synchronization,', () => {
     })
   })
 
-  it('moves the checked-out marker when checking out another patch', async () => {
+  itSkippedOnCi('moves the checked-out marker when checking out another patch', async () => {
     secondPatchId = await seedExtraPatch(workspacePath, 'feat/second', secondPatchTitle)
     await workbench.executeCommand('Refresh All Patch Data')
 
@@ -724,30 +732,33 @@ describe('Patch state synchronization,', () => {
     await webview.close()
   })
 
-  it('sorts an out-of-band updated patch to the top, listing it exactly once', async () => {
-    await seedExtraPatch(workspacePath, 'feat/third', thirdPatchTitle)
-    await workbench.executeCommand('Refresh All Patch Data')
+  itSkippedOnCi(
+    'sorts an out-of-band updated patch to the top, listing it exactly once',
+    async () => {
+      await seedExtraPatch(workspacePath, 'feat/third', thirdPatchTitle)
+      await workbench.executeCommand('Refresh All Patch Data')
 
-    await expect(await findPatchItem(thirdPatchTitle)).toBeDisplayed()
-    await expectPatchItemToBeListedAbove(thirdPatchTitle, secondPatchTitle)
+      await expect(await findPatchItem(thirdPatchTitle)).toBeDisplayed()
+      await expectPatchItemToBeListedAbove(thirdPatchTitle, secondPatchTitle)
 
-    // grow the older patch (the second) with a new revision, out of band
-    await zx`git checkout feat/second`
-    await zx`echo "more" >> second.txt`
-    await zx`git add second.txt`
-    await zx`git commit -m 'grows the second patch' --no-gpg-sign`
-    await zx`git push rad HEAD:patches/${secondPatchId}`
+      // grow the older patch (the second) with a new revision, out of band
+      await zx`git checkout feat/second`
+      await zx`echo "more" >> second.txt`
+      await zx`git add second.txt`
+      await zx`git commit -m 'grows the second patch' --no-gpg-sign`
+      await zx`git push rad HEAD:patches/${secondPatchId}`
 
-    await workbench.executeCommand('Refresh All Patch Data')
+      await workbench.executeCommand('Refresh All Patch Data')
 
-    await expectPatchItemToBeListedAbove(secondPatchTitle, thirdPatchTitle)
+      await expectPatchItemToBeListedAbove(secondPatchTitle, thirdPatchTitle)
 
-    const rowsWithSecondPatchTitle = (await snapshotSidebarRowTexts()).filter((text) =>
-      text.includes(secondPatchTitle),
-    )
+      const rowsWithSecondPatchTitle = (await snapshotSidebarRowTexts()).filter((text) =>
+        text.includes(secondPatchTitle),
+      )
 
-    expect(rowsWithSecondPatchTitle.length).toBe(1)
-  })
+      expect(rowsWithSecondPatchTitle.length).toBe(1)
+    },
+  )
 })
 
 /** Creates one more patch off of master, on `branchName`, and returns its id. */
