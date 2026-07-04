@@ -199,6 +199,40 @@ describe("Patch details, of a patch on the user's own rad-initialized repo,", ()
     // a diff editor tab labeled "hello.txt (<oldSha> ⟷ <newSha>) Added" must open
     await expect($(`.tab[aria-label*="hello.txt ("]`)).toBeDisplayed()
 
+    // the diff's two sides must be served by the extension's virtual filesystem (no temp files
+    // on disk), read-only, addressed by the file's actual in-repo path (so the tab/breadcrumbs
+    // point at the real file), with the new side showing the file's content sourced from the
+    // local node's storage and the old side empty (the file is added by the patch)
+    const diff = await browser.executeWorkbench(async (vscode: typeof VsCode) => {
+      const input = vscode.window.tabGroups.activeTabGroup.activeTab?.input as {
+        original?: VsCode.Uri
+        modified?: VsCode.Uri
+      }
+
+      async function readSide(uri: VsCode.Uri | undefined) {
+        if (!uri) {
+          return undefined
+        }
+        const text = (await vscode.workspace.openTextDocument(uri)).getText()
+
+        return { scheme: uri.scheme, path: uri.path, text }
+      }
+
+      return {
+        isWritable: vscode.workspace.fs.isWritableFileSystem('radicle-patch'),
+        original: await readSide(input?.original),
+        modified: await readSide(input?.modified),
+      }
+    })
+
+    expect(diff.isWritable).toBe(false)
+    expect(diff.modified?.scheme).toBe('radicle-patch')
+    expect(diff.original?.scheme).toBe('radicle-patch')
+    expect(diff.modified?.path).toBe('/hello.txt')
+    expect(diff.original?.path).toBe('/hello.txt')
+    expect(diff.modified?.text).toBe('Hello, World!\n')
+    expect(diff.original?.text).toBe('')
+
     // close the diff editor, revealing the webview again: a backgrounded webview tab has
     // no live iframe, which would break all following webview interactions
     await browser.executeWorkbench(async (vscode: typeof VsCode) => {
