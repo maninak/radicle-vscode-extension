@@ -1,7 +1,10 @@
 import type * as VsCode from 'vscode'
 import type { WebView, Workbench } from 'wdio-vscode-service'
+import { Buffer } from 'node:buffer'
 import { execFileSync } from 'node:child_process'
+import { writeFileSync } from 'node:fs'
 import net from 'node:net'
+import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { Key } from 'webdriverio'
 import { cd, $ as zx } from 'zx'
@@ -41,6 +44,10 @@ const cliEditedPatchTitle = 'feat: add hello world greeting v2'
 const cliEditedPatchDescription = 'Adds an even friendlier greeting file'
 const webviewEditedPatchTitle = 'feat: hello galaxy'
 const webviewEditedPatchDescription = 'Greets the whole galaxy now'
+
+// Bytes with a NUL and invalid-UTF-8 sequences (0xff 0xfe), so a string round-trip would
+// corrupt them: proves the diff provider serves raw bytes, not a decoded string.
+const binaryFileBytes = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0xff, 0xfe]
 
 // This spec deliberately starts NO radicle-httpd: the patch features under test must work
 // with the local Radicle node alone, sourced via the `rad` CLI and git.
@@ -199,6 +206,40 @@ describe("Patch details, of a patch on the user's own rad-initialized repo,", ()
     // a diff editor tab labeled "hello.txt (<oldSha> ⟷ <newSha>) Added" must open
     await expect($(`.tab[aria-label*="hello.txt ("]`)).toBeDisplayed()
 
+    // the diff's two sides must be served by the extension's virtual filesystem (no temp files
+    // on disk), read-only, addressed by the file's actual in-repo path (so the tab/breadcrumbs
+    // point at the real file), with the new side showing the file's content sourced from the
+    // local node's storage and the old side empty (the file is added by the patch)
+    const diff = await browser.executeWorkbench(async (vscode: typeof VsCode) => {
+      const input = vscode.window.tabGroups.activeTabGroup.activeTab?.input as {
+        original?: VsCode.Uri
+        modified?: VsCode.Uri
+      }
+
+      async function readSide(uri: VsCode.Uri | undefined) {
+        if (!uri) {
+          return undefined
+        }
+        const text = (await vscode.workspace.openTextDocument(uri)).getText()
+
+        return { scheme: uri.scheme, path: uri.path, text }
+      }
+
+      return {
+        isWritable: vscode.workspace.fs.isWritableFileSystem('radicle-patch'),
+        original: await readSide(input?.original),
+        modified: await readSide(input?.modified),
+      }
+    })
+
+    expect(diff.isWritable).toBe(false)
+    expect(diff.modified?.scheme).toBe('radicle-patch')
+    expect(diff.original?.scheme).toBe('radicle-patch')
+    expect(diff.modified?.path).toBe('/hello.txt')
+    expect(diff.original?.path).toBe('/hello.txt')
+    expect(diff.modified?.text).toBe('Hello, World!\n')
+    expect(diff.original?.text).toBe('')
+
     // close the diff editor, revealing the webview again: a backgrounded webview tab has
     // no live iframe, which would break all following webview interactions
     await browser.executeWorkbench(async (vscode: typeof VsCode) => {
@@ -208,6 +249,89 @@ describe("Patch details, of a patch on the user's own rad-initialized repo,", ()
         'workbench.actions.treeView.patches-view.collapseAll',
       )
     })
+  })
+
+  it('serves modified, deleted and binary patch file diffs from local storage', async () => {
+    const rid = execFileSync('rad', ['inspect', '--rid'], {
+      cwd: workspacePath,
+      encoding: 'utf-8',
+    }).trim()
+    const base = execFileSync('git', ['rev-parse', 'master'], {
+      cwd: workspacePath,
+      encoding: 'utf-8',
+    }).trim()
+    const head = execFileSync('git', ['rev-parse', 'feat/hello-world'], {
+      cwd: workspacePath,
+      encoding: 'utf-8',
+    }).trim()
+
+    // The provider serves each changed file's content straight from the local node's storage as
+    // raw bytes: a modified file's old and new versions, a deleted file's old version, and a
+    // binary file whose exact bytes (incl. a NUL and invalid UTF-8) survive intact — a string
+    // round-trip, unlike this byte-accurate path, would corrupt them.
+    async function readBlob(path: string, commit: string): Promise<number[]> {
+      return await browser.executeWorkbench(
+        async (vscode: typeof VsCode, repoId: string, atCommit: string, atPath: string) => {
+          const uri = vscode.Uri.from({
+            scheme: 'radicle-patch',
+            path: atPath,
+            query: JSON.stringify({ rid: repoId, commit: atCommit }),
+          })
+
+          return Array.from(await vscode.workspace.fs.readFile(uri))
+        },
+        rid,
+        commit,
+        path,
+      )
+    }
+
+    function decode(bytes: number[]) {
+      return Buffer.from(bytes).toString('utf-8')
+    }
+
+    expect(decode(await readBlob('/modify-me.txt', base))).toBe('original line\n')
+    expect(decode(await readBlob('/modify-me.txt', head))).toBe('changed line\n')
+    expect(decode(await readBlob('/delete-me.txt', base))).toBe('delete me\n')
+    expect(await readBlob('/logo.bin', head)).toEqual(binaryFileBytes)
+
+    // and a modified file's diff opens in a read-only editor showing both versions from storage
+    await browser.executeWorkbench(
+      async (vscode: typeof VsCode, repoId: string, oldCommit: string, newCommit: string) => {
+        function build(commit: string) {
+          return vscode.Uri.from({
+            scheme: 'radicle-patch',
+            path: '/modify-me.txt',
+            query: JSON.stringify({ rid: repoId, commit }),
+          })
+        }
+        await vscode.commands.executeCommand(
+          'vscode.diff',
+          build(oldCommit),
+          build(newCommit),
+          'modify-me.txt diff',
+        )
+      },
+      rid,
+      base,
+      head,
+    )
+
+    let modifiedDiff: Awaited<ReturnType<typeof readActiveDiffSides>> | undefined
+    await browser.waitUntil(
+      async () => {
+        modifiedDiff = await readActiveDiffSides()
+
+        return modifiedDiff.modified?.path === '/modify-me.txt'
+      },
+      { timeoutMsg: 'expected the modified-file diff editor to open' },
+    )
+
+    expect(modifiedDiff!.original?.text).toBe('original line\n')
+    expect(modifiedDiff!.modified?.text).toBe('changed line\n')
+    expect(modifiedDiff!.modified?.scheme).toBe('radicle-patch')
+
+    await closeActiveEditor()
   })
 })
 
@@ -221,12 +345,20 @@ async function initRadRepoWithPatch(workspacePath: string) {
   await zx`git config --local user.email "test@radicle.dev"`
   await zx`git config --local user.name "Radicle Test"`
   await zx`echo "# Patch Details Repo" > README.md`
-  await zx`git add README.md`
+  // seed base files the patch will later modify and delete, to cover those diff cases
+  await zx`echo 'original line' > modify-me.txt`
+  await zx`echo 'delete me' > delete-me.txt`
+  await zx`git add README.md modify-me.txt delete-me.txt`
   await zx`git commit -m 'adds readme' --no-gpg-sign`
   await radInitPublicRepo(workspacePath)
   await zx`git checkout -b feat/hello-world`
+  // the patch adds a text file and a binary file, modifies one file and deletes another,
+  // so the changed-files diff covers added, binary, modified and deleted cases
   await zx`echo 'Hello, World!' > hello.txt`
-  await zx`git add hello.txt`
+  await zx`echo 'changed line' > modify-me.txt`
+  await zx`rm delete-me.txt`
+  writeFileSync(join(workspacePath, 'logo.bin'), Buffer.from(binaryFileBytes))
+  await zx`git add -A`
   await zx`git commit -m ${initialPatchTitle} -m ${initialPatchDescription} --no-gpg-sign`
   await zx`git push rad HEAD:refs/patches`
 }
@@ -340,6 +472,46 @@ async function findPatchItem(label: string) {
   )
 
   return patchItem!
+}
+
+/**
+ * Reads both sides of the currently active diff editor, returning each side's URI scheme and
+ * path, its text, and its raw bytes (so binary content can be asserted exactly).
+ */
+async function readActiveDiffSides() {
+  return await browser.executeWorkbench(async (vscode: typeof VsCode) => {
+    const input = vscode.window.tabGroups.activeTabGroup.activeTab?.input as {
+      original?: VsCode.Uri
+      modified?: VsCode.Uri
+    }
+
+    async function readSide(uri: VsCode.Uri | undefined) {
+      if (!uri) {
+        return undefined
+      }
+      const bytes = await vscode.workspace.fs.readFile(uri)
+      let text = ''
+      try {
+        // opening binary content as a text document may fail; bytes are asserted for those
+        text = (await vscode.workspace.openTextDocument(uri)).getText()
+      } catch {
+        text = ''
+      }
+
+      return { scheme: uri.scheme, path: uri.path, text, bytes: Array.from(bytes) }
+    }
+
+    return {
+      original: await readSide(input?.original),
+      modified: await readSide(input?.modified),
+    }
+  })
+}
+
+async function closeActiveEditor() {
+  await browser.executeWorkbench(async (vscode: typeof VsCode) => {
+    await vscode.commands.executeCommand('workbench.action.closeActiveEditor')
+  })
 }
 
 /**

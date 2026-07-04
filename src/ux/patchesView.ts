@@ -1,4 +1,3 @@
-import * as fs from 'node:fs/promises'
 import Path, { sep } from 'node:path'
 import {
   EventEmitter,
@@ -11,12 +10,12 @@ import {
   TreeItemCollapsibleState,
   Uri,
 } from 'vscode'
-import { extTempDir } from '../constants'
 import {
   getFirstAndLatestRevisions,
   isLocalIdAuthedToEditPatchStatus,
-  loadFileAtCommit,
   loadPatchFilechanges,
+  toEmptyBlobUri,
+  toPatchFileBlobUri,
 } from '../helpers'
 import { useEnvStore, usePatchStore } from '../stores'
 import { type AugmentedPatch, isPatch, type Patch } from '../types'
@@ -25,7 +24,6 @@ import {
   capitalizeFirstLetter,
   getIdentityAliasOrId,
   getTimeAgo,
-  log,
   shortenHash,
 } from '../utils'
 
@@ -38,8 +36,8 @@ let timesPatchListFetchErroredConsecutively = 0
 
 export interface FilechangeNode {
   relativeInRepoUrl: string
-  oldVersionUrl?: string
-  newVersionUrl?: string
+  oldVersionUri?: Uri
+  newVersionUri?: Uri
   patch: AugmentedPatch
   getTreeItem: () => ReturnType<(typeof patchesTreeDataProvider)['getTreeItem']>
 }
@@ -112,7 +110,7 @@ export const patchesTreeDataProvider: TreeDataProvider<
       return filechangeNode.getTreeItem()
     }
   },
-  getChildren: async (elem) => {
+  getChildren: (elem) => {
     const rid = useEnvStore().currentRepoId
     if (!rid) {
       // This trap should theoretically never be reached,
@@ -167,105 +165,31 @@ export const patchesTreeDataProvider: TreeDataProvider<
         return ['Patch details could not be resolved due to an error!']
       }
 
-      // create a placeholder empty file used to diff added or removed files
-      const emptyFileUrl = `${extTempDir}${sep}empty`
-
-      try {
-        await fs.mkdir(Path.dirname(emptyFileUrl), { recursive: true })
-        await fs.writeFile(emptyFileUrl, '')
-      } catch (error) {
-        log(
-          "Failed saving placeholder empty file to enable diff for Patch's changed files.",
-          'error',
-          (error as Partial<Error | undefined>)?.message,
-        )
-      }
-
-      // TS can't see `rid`'s narrowing inside the hoisted function declaration below
-      const narrowedRid = rid
-
-      async function writeVersionOfFileToTempDir(
-        commitSha: string,
-        filePathAtCommit: string,
-        tempFileUrl: string,
-      ): Promise<void> {
-        const { data: fileContent, error } = loadFileAtCommit(
-          narrowedRid,
-          commitSha,
-          filePathAtCommit,
-        )
-        if (error) {
-          throw error
-        }
-        await fs.mkdir(Path.dirname(tempFileUrl), { recursive: true })
-        await fs.writeFile(tempFileUrl, fileContent)
-      }
-
       const filechangeNodes: FilechangeNode[] = filechanges
         .map((filechange) => {
           const filePath = filechange.path
           const fileDir = Path.dirname(filePath)
           const filename = Path.basename(filePath)
 
-          const oldVersionUrl = `${extTempDir}${sep}${shortenHash(
-            oldVersionCommitSha,
-          )}${sep}${fileDir}${sep}${filename}`
-          // TODO: should the newVersionUrl be just the filechange.path (with full path to the
-          // actual file on the fs) if the current git commit is same as newVersionCommitSha
-          // and the file isn't on the git (un-)staged changes?
-          const newVersionUrl = `${extTempDir}${sep}${shortenHash(
-            newVersionCommitSha,
-          )}${sep}${fileDir}${sep}${filename}`
+          const oldVersionUri =
+            filechange.status === 'added'
+              ? toEmptyBlobUri(filechange.path)
+              : toPatchFileBlobUri({
+                  rid,
+                  commit: oldVersionCommitSha,
+                  path: filechange.oldPath,
+                })
+          const newVersionUri =
+            filechange.status === 'deleted'
+              ? toEmptyBlobUri(filechange.oldPath)
+              : toPatchFileBlobUri({ rid, commit: newVersionCommitSha, path: filechange.path })
 
           const node: FilechangeNode = {
             relativeInRepoUrl: filePath.includes(sep) ? filePath : `${sep}${filePath}`,
-            oldVersionUrl,
-            newVersionUrl,
+            oldVersionUri,
+            newVersionUri,
             patch,
-            getTreeItem: async () => {
-              try {
-                switch (filechange.status) {
-                  case 'added':
-                    await writeVersionOfFileToTempDir(
-                      newVersionCommitSha,
-                      filechange.path,
-                      newVersionUrl,
-                    )
-                    break
-                  case 'deleted':
-                    await writeVersionOfFileToTempDir(
-                      oldVersionCommitSha,
-                      filechange.oldPath,
-                      oldVersionUrl,
-                    )
-                    break
-                  case 'modified':
-                  case 'copied':
-                  case 'moved':
-                    await Promise.all([
-                      writeVersionOfFileToTempDir(
-                        oldVersionCommitSha,
-                        filechange.oldPath,
-                        oldVersionUrl,
-                      ),
-                      writeVersionOfFileToTempDir(
-                        newVersionCommitSha,
-                        filechange.path,
-                        newVersionUrl,
-                      ),
-                    ])
-                    break
-                  default:
-                    assertUnreachable(filechange.status)
-                }
-              } catch (error) {
-                log(
-                  `Failed saving temp files to enable diff for ${filePath}.`,
-                  'error',
-                  (error as Partial<Error | undefined>)?.message,
-                )
-              }
-
+            getTreeItem: () => {
               const filechangeTreeItem: TreeItem = {
                 id: `${patch.id} ${oldVersionCommitSha}..${newVersionCommitSha} ${filePath}`,
                 contextValue: `filechange:${filechange.status}`,
@@ -285,8 +209,8 @@ export const patchesTreeDataProvider: TreeDataProvider<
                   tooltip: `Show this file's changes between its \
 before-the-Patch version and its latest version committed in the Radicle Patch`,
                   arguments: [
-                    Uri.file(filechange.status === 'added' ? emptyFileUrl : oldVersionUrl),
-                    Uri.file(filechange.status === 'deleted' ? emptyFileUrl : newVersionUrl),
+                    oldVersionUri,
+                    newVersionUri,
                     `${filename} (${shortenHash(oldVersionCommitSha)} ⟷ ${shortenHash(
                       newVersionCommitSha,
                     )}) ${capitalizeFirstLetter(filechange.status)}`,
@@ -301,7 +225,7 @@ before-the-Patch version and its latest version committed in the Radicle Patch`,
 
           return node
         })
-        .sort((n1, n2) => (n1.relativeInRepoUrl < n2.relativeInRepoUrl ? -1 : 0))
+        .sort((n1, n2) => n1.relativeInRepoUrl.localeCompare(n2.relativeInRepoUrl))
 
       return filechangeNodes.length
         ? filechangeNodes

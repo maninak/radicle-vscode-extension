@@ -1,7 +1,7 @@
 import type { Mock } from 'vitest'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { execGit, execRad } from '../../../src/helpers/exec'
-import { loadFileAtCommit, loadPatches } from '../../../src/helpers/patchData'
+import { execRad } from '../../../src/helpers/exec'
+import { loadFileBytesAtCommit, loadPatches } from '../../../src/helpers/patchData'
 
 vi.mock('../../../src/helpers/exec', () => ({ execRad: vi.fn(), execGit: vi.fn() }))
 vi.mock('../../../src/stores', () => ({
@@ -16,7 +16,6 @@ vi.mock('../../../src/utils', () => ({ log: vi.fn(), assertUnreachable: vi.fn() 
 vi.mock('../../../src/helpers/fetchFromHttpd', () => ({ fetchFromHttpd: vi.fn() }))
 
 const execRadMock = execRad as unknown as Mock
-const execGitMock = execGit as unknown as Mock
 
 const patchId = '1111111111111111111111111111111111111111'
 const authorA = 'z6MkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
@@ -185,16 +184,15 @@ describe('loadPatches() from the local node', () => {
   })
 })
 
-describe('loadFileAtCommit() from the local node', () => {
+describe('loadFileBytesAtCommit() from the local node', () => {
   // `getStorageRepoPath` used to throw when the node home was unresolvable, escaping the
   // `XOR<{data},{error}>` contract and rejecting the tree provider's `getChildren`.
   it('returns an error object (never throws) when the node home cannot be resolved', () => {
     execRadMock.mockReturnValue({ errorCode: 1, stderr: 'no node home' })
 
-    const { data, error } = loadFileAtCommit(`rad:z123`, 'commit0', 'file.ts')
+    const { data, error } = loadFileBytesAtCommit(`rad:z123`, 'commit0', 'file.ts')
 
     expect(data).toBeUndefined()
     expect(error).toBeInstanceOf(Error)
-    expect(execGitMock).not.toHaveBeenCalled()
   })
 })

@@ -3,6 +3,7 @@ import {
   logExtensionActivated,
   registerAllCommands,
   registerAllConfigWatchers,
+  registerAllFileSystemProviders,
   registerAllFileWatchers,
   registerAllViews,
   registerAllWebviewRestorators,
@@ -16,6 +17,7 @@ export function activate(ctx: ExtensionContext) {
   useEnvStore().setExtensionContext(ctx)
 
   registerAllCommands()
+  registerAllFileSystemProviders()
   registerAllViews()
   registerAllConfigWatchers()
   registerAllFileWatchers()

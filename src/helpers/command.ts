@@ -1,5 +1,5 @@
 import type { AugmentedPatch, Patch, PatchStatus } from '../types'
-import { commands, type TextDocumentShowOptions, Uri, window } from 'vscode'
+import { commands, type TextDocumentShowOptions, type Uri, window } from 'vscode'
 import { createOrReuseWebviewPanel, execPatchMutation, execRad } from '.'
 import { useAliasStore, useEnvStore, usePatchStore } from '../stores'
 import { assert, assertUnreachable, log, showLog } from '../utils'
@@ -125,15 +125,13 @@ export function registerAllCommands(): void {
       columnOrOptions: number | TextDocumentShowOptions,
     ) => {
       await commands.executeCommand('vscode.diff', original, changed, label, columnOrOptions)
-      commands.executeCommand('workbench.action.files.setActiveEditorReadonlyInSession')
     },
   )
   registerVsCodeCmd(
     'radicle.openOriginalVersionOfPatchedFile',
     async (node: FilechangeNode | undefined) => {
-      if (node?.oldVersionUrl) {
-        await commands.executeCommand('vscode.open', Uri.file(node.oldVersionUrl))
-        commands.executeCommand('workbench.action.files.setActiveEditorReadonlyInSession')
+      if (node?.oldVersionUri) {
+        await commands.executeCommand('vscode.open', node.oldVersionUri)
       } else {
         log(
           'Failed opening editor with old version of patched file.',
@@ -146,9 +144,8 @@ export function registerAllCommands(): void {
   registerVsCodeCmd(
     'radicle.openChangedVersionOfPatchedFile',
     async (node: FilechangeNode | undefined) => {
-      if (node?.newVersionUrl) {
-        await commands.executeCommand('vscode.open', Uri.file(node.newVersionUrl))
-        commands.executeCommand('workbench.action.files.setActiveEditorReadonlyInSession')
+      if (node?.newVersionUri) {
+        await commands.executeCommand('vscode.open', node.newVersionUri)
       } else {
         log(
           'Failed opening editor with changed version of patched file.',
