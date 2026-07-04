@@ -28,6 +28,7 @@
 - **aliases:** cover node-alias resolution with unit tests (address-book cache seeding, refresh-and-persist, and mapping a patch author to its alias) and an e2e assertion that a patch author renders its alias, sourced from the local node's address book, instead of a node id
 - **clone:** cover the cloneable-repo cache and picker with unit tests (version-adaptive pagination, the once-a-day refresh throttle, the full-on-disk vs capped-in-memory split, live list growth, and offline error handling) and rework the clone e2e for the new live-updating picker
 - **e2e:** silence the git and `rad` command output that the test runner echoed during patch setup, de-noising the e2e logs (failures still surface their output)
+- **onboarding:** cover, with an e2e test, that the extension picks up a rad binary created at a path whose parent directory did not exist when the extension loaded, without a window reload (via the fallback poll)
 
 ### 📖 Documentation
 
