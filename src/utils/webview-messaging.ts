@@ -23,6 +23,7 @@ type MessageToExtension =
   | Message<'refreshPatchData', { patchId: Patch['id'] }>
   | Message<'checkOutPatchBranch', { patch: Patch }>
   | Message<'revealInPatchesView', { patch: AugmentedPatch }>
+  | Message<'openPatchMultiFileDiff', { patch: AugmentedPatch }>
   | Message<'checkOutDefaultBranch'>
   | Message<
       'updatePatchTitleAndDescription',

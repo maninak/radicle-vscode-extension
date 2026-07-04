@@ -12,10 +12,11 @@ interface UriLike {
   scheme: string
   path: string
   fsPath: string
+  query: string
 }
 
 function file(fsPath: string): UriLike {
-  return { scheme: 'file', path: fsPath, fsPath }
+  return { scheme: 'file', path: fsPath, fsPath, query: '' }
 }
 
 function joinPath(base: UriLike, ...segments: string[]): UriLike {
@@ -24,8 +25,17 @@ function joinPath(base: UriLike, ...segments: string[]): UriLike {
   return file(joinedPath)
 }
 
+function from(components: { scheme: string; path: string; query?: string }): UriLike {
+  return {
+    scheme: components.scheme,
+    path: components.path,
+    fsPath: components.path,
+    query: components.query ?? '',
+  }
+}
+
 // eslint-disable-next-line ts/naming-convention -- mirrors the `vscode` API export name
-export const Uri = { file, joinPath }
+export const Uri = { file, joinPath, from }
 
 // eslint-disable-next-line ts/naming-convention -- mirrors the `vscode` API export name
 export const ProgressLocation = {

@@ -301,6 +301,9 @@ function handleMessageFromWebviewPatchDetail(
     case 'revealInPatchesView':
       revealPatch(message.payload.patch, { expand: true, focus: true })
       break
+    case 'openPatchMultiFileDiff':
+      commands.executeCommand('radicle.openAllPatchFileChanges', message.payload.patch)
+      break
     case 'updatePatchTitleAndDescription':
       mutatePatch(message.payload.patchId, message.payload.oldTitle, (timeout?: number) =>
         execPatchMutation(

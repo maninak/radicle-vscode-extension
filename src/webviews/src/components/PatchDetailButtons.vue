@@ -21,6 +21,13 @@ function checkOutDefaultBranch() {
 function revealPatch() {
   notifyExtension({ command: 'revealInPatchesView', payload: { patch: toRaw(patch.value) } })
 }
+
+function browseDiff() {
+  notifyExtension({
+    command: 'openPatchMultiFileDiff',
+    payload: { patch: toRaw(patch.value) },
+  })
+}
 </script>
 
 <template>
@@ -60,11 +67,21 @@ function revealPatch() {
   <vscode-button
     class="self-center"
     appearance="secondary"
-    title="Show All Files Changed in the Latest Revision of This Patch"
+    title="Reveal Patch Among Those Listed in the Patches View"
     @click="revealPatch"
   >
     <!-- eslint-disable-next-line vue/no-deprecated-slot-attribute -->
-    <span slot="start" class="codicon codicon-diff-single"></span>
+    <span slot="start" class="codicon codicon-go-to-search"></span>
+    Reveal
+  </vscode-button>
+  <vscode-button
+    class="self-center"
+    appearance="secondary"
+    title="Open All of This Patch's Changed Files in a Multi-File Diff"
+    @click="browseDiff"
+  >
+    <!-- eslint-disable-next-line vue/no-deprecated-slot-attribute -->
+    <span slot="start" class="codicon codicon-diff-multiple"></span>
     Browse Diff
   </vscode-button>
 </template>

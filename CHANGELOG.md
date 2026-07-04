@@ -4,14 +4,17 @@
 
 ### ✨ Highlights
 
-🆓 from httpd!
+- httpd is no longer required
+- revamped patch diffs
 
 ### 🚀 Enhancements
 
 - **httpd:** remove the need for httpd. Radicle Patches now work fully offline, without needing `radicle-httpd` to be installed or running. All patch data (listings, details, file diffs) is sourced directly from the local Radicle node using the `rad` CLI and git. The HTTP API remains supported as an optional, alternative source of network state for upcoming features.
 - **aliases:** keep showing node aliases (for patch authors, reviewers, etc.), previously sourced by httpd. This is done using an OS-agnostic WASM sqlite reader, not with a native module, to retain multi-OS support, including for Windows and no per-distro releases. It accesses the local node's address book sqlite database, and stores them in a vscode-native, machine-local cache for instant rendering on next launch.
 - **commands:**  list every known repo from any seed ever configured when cloning a repo, not just the ones already present in the local Radicle storage. The list is sourced from the configured HTTP API endpoint and loads instantly from a machine-local cache (offline included), with a background refresh at most once a day that shows a spinner while fetching and grows the offered list live as results arrive. The full list is cached on disk while the most widely-seeded repos are the ones offered, so the picker stays manageable as the network grows.
-- **patches:** show the diff of a patch's changed files from in-memory virtual documents served straight out of the local Radicle storage, instead of writing temporary files to disk. Diff editors are now inherently read-only, nothing pollutes the OS temp dir or search results, and (unlike files on disk) their content can never go stale. Binary files such as images are served byte-accurate, so VS Code renders them properly in the diff (e.g. an image preview) instead of as corrupted text ([#154](https://github.com/maninak/radicle-vscode-extension/issues/154))
+- **patches:** show the diff of a patch's changed files from in-memory virtual documents served straight out of the local Radicle storage, instead of writing temporary files to disk
+- **commands:** implement new command `radicle.openAllPatchFileChanges`, available as a right-click action on each patch item in the Patches view. Invoking it opens all of the patch's changed files together in VS Code's built-in multi-file diff editor. VS Code offers multiple options to configure this view further to your liking
+- **patch-detail:** bring back the "Reveal" button (reveals and expands the patch among those in the Patches view) and add next to it a new "Browse Diff" button, marked with the multi-file diff icon, that opens all of the patch's changed files in VS Code's built-in multi-file diff editor
 
 ### 🩹 Fixes
 
@@ -33,6 +36,10 @@
 ### 📖 Documentation
 
 - **readme:** remove all references to httpd
+
+### ❤️ Code Contributors
+
+- Lorenz Leutgeb (`lorenz`, `did:key:z6MkkPvBfjP4bQmco5Dm7UGsX2ruDBieEHi8n9DVJWX5sTEz`)
 
 ---
 

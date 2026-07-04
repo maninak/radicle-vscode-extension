@@ -1,3 +1,5 @@
+import type { XOR } from 'ts-xor'
+import type { AugmentedPatch } from '../types'
 import {
   type Disposable,
   type Event,
@@ -12,7 +14,16 @@ import {
 } from 'vscode'
 import { useEnvStore } from '../stores'
 import { log } from '../utils'
-import { loadFileBytesAtCommit } from './patchData'
+import { getFirstAndLatestRevisions } from './patch'
+import { loadFileBytesAtCommit, loadPatchFilechanges } from './patchData'
+
+/**
+ * A single row for VS Code's built-in multi-file diff editor (opened via the `vscode.changes`
+ * command): `[label, original, modified]`. `label` is the resource used for the row's path;
+ * `original`/`modified` are the old/new blob URIs, or `undefined` for the missing side of an
+ * added (no original) or deleted (no modified) file, which the editor renders natively.
+ */
+export type MultiFileDiffResource = [Uri, Uri | undefined, Uri | undefined]
 
 /*
  * Serves the contents of a Radicle Patch's changed files directly from the local node's storage
@@ -48,6 +59,41 @@ export function toEmptyBlobUri(path: string): Uri {
     path: path.startsWith('/') ? path : `/${path}`,
     query: JSON.stringify({ empty: true }),
   })
+}
+
+/**
+ * Builds the resource list for a whole Patch's multi-file diff: one `[label, original, modified]`
+ * row per changed file, with the old/new versions served from the local storage repo via the
+ * `radicle-patch:` scheme. Added files get no `original`, deleted files no `modified`.
+ */
+export function buildPatchMultiFileDiffResources(
+  rid: BlobParams['rid'],
+  patch: AugmentedPatch,
+): XOR<{ resources: MultiFileDiffResource[] }, { error: Error }> {
+  const { latestRevision } = getFirstAndLatestRevisions(patch)
+  const oldCommit = latestRevision.base
+  const newCommit = latestRevision.oid
+
+  const { data: filechanges, error } = loadPatchFilechanges(rid, oldCommit, newCommit)
+  if (error) {
+    return { error }
+  }
+
+  const resources = filechanges.map((filechange): MultiFileDiffResource => {
+    const label = Uri.from({ scheme, path: `/${filechange.path}` })
+    const original =
+      filechange.status === 'added'
+        ? undefined
+        : toPatchFileBlobUri({ rid, commit: oldCommit, path: filechange.oldPath })
+    const modified =
+      filechange.status === 'deleted'
+        ? undefined
+        : toPatchFileBlobUri({ rid, commit: newCommit, path: filechange.path })
+
+    return [label, original, modified]
+  })
+
+  return { resources }
 }
 
 const emptyContent = new Uint8Array(0)

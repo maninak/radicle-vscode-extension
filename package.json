@@ -144,6 +144,14 @@
         "enablement": "radicle.isRadInitialized"
       },
       {
+        "command": "radicle.openAllPatchFileChanges",
+        "title": "Open All Changed Files in a Multi-File Diff",
+        "shortTitle": "Open Multi-File Diff",
+        "category": "Radicle",
+        "icon": "$(diff-multiple)",
+        "enablement": "radicle.isRadInitialized"
+      },
+      {
         "command": "radicle.checkoutPatch",
         "title": "Check Out Patch Branch",
         "shortTitle": "Check Out Patch",
@@ -210,6 +218,10 @@
           "when": "false"
         },
         {
+          "command": "radicle.openAllPatchFileChanges",
+          "when": "false"
+        },
+        {
           "command": "radicle.refreshOnePatch",
           "when": "false"
         },
@@ -269,6 +281,11 @@
           "command": "radicle.viewPatchDetails",
           "when": "view == patches-view && viewItem =~ /patch/",
           "group": "contextMenu.A@1"
+        },
+        {
+          "command": "radicle.openAllPatchFileChanges",
+          "when": "view == patches-view && viewItem =~ /patch/",
+          "group": "contextMenu.A@3"
         },
         {
           "command": "radicle.refreshOnePatch",
