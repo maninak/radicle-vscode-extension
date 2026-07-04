@@ -36,6 +36,7 @@
 ### 📖 Documentation
 
 - **readme:** remove all references to httpd
+- **readme:** add references to the project's roadmap
 
 ### ❤️ Code Contributors
 

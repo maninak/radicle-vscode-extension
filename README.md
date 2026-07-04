@@ -8,18 +8,17 @@
 [![Visual Studio Marketplace Downloads](https://flat.badgen.net/vs-marketplace/d/radicle-ide-plugins-team.radicle?color=55A2EE&label=VS%20Marketplace%20Downloads)](https://marketplace.visualstudio.com/items?itemName=radicle-ide-plugins-team.radicle)
 [![Open VSX Downloads](https://img.shields.io/open-vsx/dt/radicle-ide-plugins-team/radicle?style=flat&logo=openvsx&logoColor=FFFFFF&label=Open%20VSX%20Downloads&color=C160EF&cacheSeconds=64800)](https://open-vsx.org/extension/radicle-ide-plugins-team/radicle)
 [![rad: - z3Makm6fsQQXmpSFE43DZqwupaEhk](https://img.shields.io/static/v1?label=rad%3A&message=z3Makm6fsQQXmpSFE43DZqwupaEhk&color=6666FF&cacheSeconds=64800)](https://app.radicle.at/nodes/seed.radicle.at/rad:z3Makm6fsQQXmpSFE43DZqwupaEhk)
+[![Roadmap](https://img.shields.io/badge/Roadmap-orange)](https://github.com/users/maninak/projects/1/views/1)
 
 A VS Code extension bringing support for the Radicle network to your IDE.
 
-[Radicle](https://radicle.dev/) is a GitHub alternative with familiar features like Pull Requests, Issues, etc, via a peer-to-peer, free and open-source network built on top of Git.
+[Radicle](https://radicle.dev/) is a decentralized, local-first and sovereign code forge alternative to GitHub. It's built on top of Git and operates on the free, peer-to-peer and open-source Radicle network.
 
-> **NOTE:** Patch features now work fully offline against your local Radicle node — [Radicle HTTP Daemon](https://radicle.dev/download#radicle-httpd-release-name) (>=0.17.0) is no longer required. It stays optional and is currently used only for cloning repos from the network.
-
-> **NOTE:** The extension currently offers a limited feature set. Deeper integration of Patches and then Issues is planned.
+> **NOTE:** The extension currently offers a limited feature set. Deeper integration of Patches and then Issues is planned and tracked on the [🗺️ Roadmap](https://github.com/users/maninak/projects/1/views/1).
 
 ## Features
 
-> _See the latest, as well as upcoming, updates in the [🗒️ Change Log](./CHANGELOG.md)._
+> _See the latest, as well as merged and upcoming updates in the [🗒️ Change Log](./CHANGELOG.md)._
 
 - 🖲️ [Radicle Commands](#integrated-radicle-commands) everywhere you need them
 - 📋 [Patches View](#patches-view) offers a glance at the status of code changes in your repository
@@ -117,6 +116,10 @@ Set environment variables for the Radicle CLI and more from VS Code's settings
 
 ![Integrated logging](assets/for-md/logs.png)
 
+## Roadmap
+
+Planned and in-progress work is tracked on the [GitHub Project board](https://github.com/users/maninak/projects/1/views/1). See the [Change Log](./CHANGELOG.md) for what has already shipped and what's merged and en route to ship next.
+
 ## Contributing
 
 Please see the [Contribution Guide](./CONTRIBUTING.md).
@@ -125,7 +128,7 @@ Please see the [Contribution Guide](./CONTRIBUTING.md).
 
 If this extension saves you time, or you would like to see it keep getting better, here are a few ways to support further development:
 
-- 🌱 Seed this repo on [Radicle](https://app.radicle.at/nodes/seed.radicle.at/rad:z3Makm6fsQQXmpSFE43DZqwupaEhk) and star it on [GitHub](https://github.com/cytechmobile/radicle-vscode-extension)
+- 🌱 Seed this repo on [Radicle](https://app.radicle.at/nodes/seed.radicle.at/rad:z3Makm6fsQQXmpSFE43DZqwupaEhk) and star it on [GitHub](https://github.com/maninak/radicle-vscode-extension)
 - 📣 Share it with colleagues, or leave a rating on the [VS Marketplace](https://marketplace.visualstudio.com/items?itemName=radicle-ide-plugins-team.radicle) or [Open VSX](https://open-vsx.org/extension/radicle-ide-plugins-team/radicle)
 - 💛 Chip in on Liberapay with a micro-donation, if you can comfortably spare it.
 
