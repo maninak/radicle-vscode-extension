@@ -1,6 +1,7 @@
 import type { ExtensionContext } from 'vscode'
 import {
   logExtensionActivated,
+  pruneObsoleteTempFilesSearchExclude,
   registerAllCommands,
   registerAllConfigWatchers,
   registerAllFileSystemProviders,
@@ -23,6 +24,8 @@ export function activate(ctx: ExtensionContext) {
   registerAllFileWatchers()
   registerAllWebviewRestorators()
   registerExtensionHostAutoReload()
+
+  pruneObsoleteTempFilesSearchExclude()
 
   logExtensionActivated()
   validateRadCliInstallation({ minimizeUserNotifications: true })
