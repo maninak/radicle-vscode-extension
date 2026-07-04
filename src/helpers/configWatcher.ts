@@ -2,7 +2,6 @@ import { workspace } from 'vscode'
 import { type ExtensionConfig, registerAllFileWatchers, resetHttpdConnection } from '.'
 import { useEnvStore, usePatchStore } from '../stores'
 import {
-  validateHideTempFilesConfigAlignment,
   validateHttpdConnection,
   validateRadCliInstallation,
   validateRadicleIdentityAuthentication,
@@ -24,7 +23,6 @@ function onConfigChange(
 interface OnConfigChangeParam {
   configKey: Parameters<typeof onConfigChange>['0']
   onConfigChange: Parameters<typeof onConfigChange>['1']
-  onBeforeWatcherRegistration?: () => void
 }
 
 // TODO: maninak instead of calling stuff directly to change, onChange set the values in a new configStore and have other things depend on it
@@ -56,11 +54,6 @@ const configWatchers = [
       usePatchStore().resetAllPatches()
     },
   },
-  {
-    configKey: 'radicle.hideTempFiles',
-    onConfigChange: validateHideTempFilesConfigAlignment,
-    onBeforeWatcherRegistration: validateHideTempFilesConfigAlignment,
-  },
 ] satisfies OnConfigChangeParam[]
 
 /**
@@ -69,7 +62,6 @@ const configWatchers = [
  */
 export function registerAllConfigWatchers(): void {
   configWatchers.forEach((cw) => {
-    cw.onBeforeWatcherRegistration?.()
     onConfigChange(cw.configKey, cw.onConfigChange)
   })
 }

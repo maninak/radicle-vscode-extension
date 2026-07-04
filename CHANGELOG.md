@@ -18,6 +18,7 @@
 - **patches:** show the checked-out marker on a patch checked out from outside VS Code (e.g. via `rad patch checkout` in a terminal). The upstream tracking that identifies the checked-out patch is configured after the branch has already switched, which the extension previously missed
 - **patches:** clear the previously checked-out patch's marker immediately when checking out another patch, instead of leaving a stale second marker behind
 - **httpd:** correctly parse multi-digit major versions of the Radicle HTTP API (e.g. `10.x`) when adapting requests for older APIs
+- **settings:** remove the obsolete `radicle.hideTempFiles` setting and, for users who had it enabled, automatically prune the stale `search.exclude` entry it had written to global settings, now that patch diffs are served from an in-memory virtual filesystem and no longer write temporary files to disk
 
 ### ☑️ Tests
 
