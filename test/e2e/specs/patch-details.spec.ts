@@ -333,6 +333,81 @@ describe("Patch details, of a patch on the user's own rad-initialized repo,", ()
 
     await closeActiveEditor()
   })
+
+  it("opens all of a patch's changed files in one multi-file diff editor", async () => {
+    const rid = execFileSync('rad', ['inspect', '--rid'], {
+      cwd: workspacePath,
+      encoding: 'utf-8',
+    }).trim()
+    const base = execFileSync('git', ['rev-parse', 'master'], {
+      cwd: workspacePath,
+      encoding: 'utf-8',
+    }).trim()
+    const head = execFileSync('git', ['rev-parse', 'feat/hello-world'], {
+      cwd: workspacePath,
+      encoding: 'utf-8',
+    }).trim()
+
+    // the seeded patch adds hello.txt & logo.bin, modifies modify-me.txt, deletes delete-me.txt.
+    // Added files get no original (left) side and the deleted file no modified (right) side, all
+    // served over the `radicle-patch:` scheme, exactly as the real command builds them.
+    await browser.executeWorkbench(
+      async (vscode: typeof VsCode, repoId: string, oldCommit: string, newCommit: string) => {
+        function blob(commit: string, path: string) {
+          return vscode.Uri.from({
+            scheme: 'radicle-patch',
+            path,
+            query: JSON.stringify({ rid: repoId, commit }),
+          })
+        }
+
+        function label(path: string) {
+          return vscode.Uri.from({ scheme: 'radicle-patch', path })
+        }
+
+        const resources = [
+          [label('/hello.txt'), undefined, blob(newCommit, '/hello.txt')],
+          [label('/logo.bin'), undefined, blob(newCommit, '/logo.bin')],
+          [
+            label('/modify-me.txt'),
+            blob(oldCommit, '/modify-me.txt'),
+            blob(newCommit, '/modify-me.txt'),
+          ],
+          [label('/delete-me.txt'), blob(oldCommit, '/delete-me.txt'), undefined],
+        ]
+
+        await vscode.commands.executeCommand('vscode.changes', 'Patch changes', resources)
+      },
+      rid,
+      base,
+      head,
+    )
+
+    let multiDiff: { label: string; isMultiDiff: boolean } | undefined
+    await browser.waitUntil(
+      async () => {
+        multiDiff = await browser.executeWorkbench((vscode: typeof VsCode) => {
+          const activeTab = vscode.window.tabGroups.activeTabGroup.activeTab
+          // `TabInputTextMultiDiff` exists at runtime (VS Code >= 1.86) but is not in the stable
+          // `@types/vscode` yet, so duck-type its `textDiffs` array instead of `instanceof`-ing it
+          const input = activeTab?.input as { textDiffs?: readonly unknown[] } | undefined
+
+          return {
+            label: activeTab?.label ?? '',
+            isMultiDiff: Array.isArray(input?.textDiffs),
+          }
+        })
+
+        // VS Code renders the multi-diff tab label as "<title> (<n> files)", counting all changed
+        // files. `textDiffs` itself only lists entries with both sides present, so it excludes the
+        // added, binary and deleted files; the label is the reliable "all 4 opened" signal.
+        return multiDiff.isMultiDiff && multiDiff.label === 'Patch changes (4 files)'
+      },
+      { timeoutMsg: 'expected a multi-file diff editor with all 4 changed files to open' },
+    )
+
+    await closeActiveEditor()
+  })
 })
 
 /**

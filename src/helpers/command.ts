@@ -1,6 +1,11 @@
 import type { AugmentedPatch, Patch, PatchStatus } from '../types'
 import { commands, type TextDocumentShowOptions, type Uri, window } from 'vscode'
-import { createOrReuseWebviewPanel, execPatchMutation, execRad } from '.'
+import {
+  buildPatchMultiFileDiffResources,
+  createOrReuseWebviewPanel,
+  execPatchMutation,
+  execRad,
+} from '.'
 import { useAliasStore, useEnvStore, usePatchStore } from '../stores'
 import { assert, assertUnreachable, log, showLog } from '../utils'
 import {
@@ -153,6 +158,40 @@ export function registerAllCommands(): void {
           `Error: Command "radicle.openChangedVersionOfPatchedFile" was called with wrong "node" param value.`,
         )
       }
+    },
+  )
+  registerVsCodeCmd(
+    'radicle.openAllPatchFileChanges',
+    async (patch: AugmentedPatch | undefined) => {
+      assert(patch)
+
+      const rid = useEnvStore().currentRepoId
+      if (!rid) {
+        log(
+          "Failed opening the patch's multi-file diff: no Radicle repo id resolved.",
+          'error',
+        )
+
+        return
+      }
+
+      const { resources, error } = buildPatchMultiFileDiffResources(rid, patch)
+      if (error) {
+        log("Failed opening the patch's multi-file diff.", 'error', error.message)
+
+        return
+      }
+      if (!resources.length) {
+        log(`Patch "${patch.title}" has no changed files to diff.`, 'warn')
+
+        return
+      }
+
+      await commands.executeCommand(
+        'vscode.changes',
+        `Patch changes: ${patch.title}`,
+        resources,
+      )
     },
   )
   registerVsCodeCmd('radicle.viewPatchDetails', (patch: AugmentedPatch) => {
