@@ -16,6 +16,7 @@ import type {
   Review,
   Revision,
 } from '../types'
+import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 import { useAliasStore, useEnvStore } from '../stores'
 import { log } from '../utils'
@@ -49,29 +50,35 @@ export interface PatchFilechange {
 }
 
 /**
- * Loads a file's full contents as of the given commit from the local node's storage repo.
+ * Loads a file's full contents as raw bytes, as of the given commit, from the local node's
+ * storage repo. Bytes (not a decoded string) so binary blobs (images, etc.) survive intact.
  */
-export function loadFileAtCommit(
+export function loadFileBytesAtCommit(
   rid: Rid,
   commit: string,
   filePath: string,
-): XOR<{ data: string }, { error: Error }> {
+): XOR<{ data: Uint8Array }, { error: Error }> {
   const { path: storageRepoPath, error } = getStorageRepoPath(rid)
   if (error) {
     return { error }
   }
 
-  const showOp = execGit(['show', `${commit}:${filePath}`], {
-    cwd: storageRepoPath,
-    outputTrimming: false,
-  })
-  if (showOp.errorCode !== undefined) {
+  try {
+    // no `encoding`, so `execFileSync` returns a `Buffer` and the blob's bytes are untouched
+    const bytes = execFileSync('git', ['show', `${commit}:${filePath}`], {
+      cwd: storageRepoPath,
+      timeout: 30_000,
+      maxBuffer: 100 * 1024 * 1024,
+    })
+
+    return { data: bytes }
+  } catch (err) {
     return {
-      error: createErrorFromExec(`Failed resolving "${filePath}" at commit ${commit}`, showOp),
+      error: new Error(
+        `Failed resolving "${filePath}" at commit ${commit}: ${(err as Error).message}`,
+      ),
     }
   }
-
-  return { data: showOp.stdout }
 }
 
 /**

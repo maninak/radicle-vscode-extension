@@ -12,7 +12,7 @@ import {
 } from 'vscode'
 import { useEnvStore } from '../stores'
 import { log } from '../utils'
-import { loadFileAtCommit } from './patchData'
+import { loadFileBytesAtCommit } from './patchData'
 
 /*
  * Serves the contents of a Radicle Patch's changed files directly from the local node's storage
@@ -71,7 +71,7 @@ function createPatchFileSystemProvider(): FileSystemProvider {
       return cached
     }
 
-    const { data, error } = loadFileAtCommit(query.rid, query.commit, path)
+    const { data, error } = loadFileBytesAtCommit(query.rid, query.commit, path)
     if (error) {
       log(
         `Failed loading "${path}" at commit ${query.commit} to render its Patch diff`,
@@ -82,10 +82,9 @@ function createPatchFileSystemProvider(): FileSystemProvider {
       return emptyContent
     }
 
-    const content = new TextEncoder().encode(data)
-    contentByKey.set(key, content)
+    contentByKey.set(key, data)
 
-    return content
+    return data
   }
 
   function throwReadonly(): never {
