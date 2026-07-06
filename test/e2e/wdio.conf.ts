@@ -70,19 +70,9 @@ const allE2eSpecs = [
 ]
 // Optionally run a subset locally, e.g. `RAD_E2E_ONLY_SPEC=patch-details pnpm test:e2e`
 const onlySpecFilter = process.env['RAD_E2E_ONLY_SPEC']
-const selectedSpecs = onlySpecFilter
+const e2eSpecs = onlySpecFilter
   ? allE2eSpecs.filter((spec) => spec.includes(onlySpecFilter))
   : allE2eSpecs
-
-// patch-details.spec.ts is chronically flaky specifically on macOS CI runners: their slower
-// Electron renderer intermittently stops repainting the Patches sidebar partway through the
-// suite, cascading the whole worker. It's a render-timing/runner issue, not app logic, and it
-// passes reliably locally and on Linux CI (which retains full coverage). Skip it on macOS CI.
-// Tracked in https://github.com/maninak/radicle-vscode-extension/issues/195
-const isMacosCi = Boolean(process.env['CI']) && process.platform === 'darwin'
-const e2eSpecs = isMacosCi
-  ? selectedSpecs.filter((spec) => !spec.includes('patch-details.spec.ts'))
-  : selectedSpecs
 
 /** Specs that mutate the network, so they get their own worker node + httpd. */
 const networkMutatingSpecs = ['clone.spec.ts', 'patch-details.spec.ts']

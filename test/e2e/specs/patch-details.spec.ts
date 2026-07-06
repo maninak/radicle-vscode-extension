@@ -165,6 +165,10 @@ describe("Patch details, of a patch on the user's own rad-initialized repo,", ()
     )
 
     expect(getPatchStatusFromRadCli(workspacePath, patchId)).toBe('draft')
+
+    // the mutation's "Updated and announced patch" toast would otherwise linger into (and
+    // intercept a click meant for a webview button in) the next test
+    await dismissAllNotifications()
   })
 
   it('persists patch title and description edits submitted from within the webview', async () => {
@@ -191,6 +195,8 @@ describe("Patch details, of a patch on the user's own rad-initialized repo,", ()
     const patchShowOutput = (await zx`rad patch show ${patchId}`).stdout
 
     expect(patchShowOutput).toContain(webviewEditedPatchTitle)
+
+    await dismissAllNotifications()
   })
 
   it("lists a patch's changed files, diffed via git, and opens a diff editor", async () => {
@@ -520,10 +526,15 @@ function getPatchStatusFromRadCli(workspacePath: string, patchId: string) {
  * fails on `.panel-header`). Remove when the service compares versions numerically.
  */
 function getPatchItemXpath(label: string) {
-  // tree rows cloned into VS Code's sticky-scroll container are excluded: they linger
-  // hidden after an expanded row scrolls or collapses, shadowing the real row
+  // Match the `monaco-list-row` class as a whole space-delimited token, not a substring:
+  // a bare `contains(@class, "monaco-list-row")` also matches the `monaco-list-rows` wrapper
+  // that holds every row, whose combined text spans all rows. That made "row X shows/hides the
+  // marker" assertions read a sibling's marker off the wrapper and flake.
+  //
+  // Tree rows cloned into VS Code's sticky-scroll container are excluded: they linger hidden
+  // after an expanded row scrolls or collapses, shadowing the real row.
   return (
-    `//div[contains(@class, "sidebar")]//div[contains(@class, "monaco-list-row")]` +
+    `//div[contains(@class, "sidebar")]//div[contains(concat(" ", normalize-space(@class), " "), " monaco-list-row ")]` +
     `[not(ancestor::div[contains(@class, "monaco-tree-sticky-container")])]` +
     `[.//span[contains(text(), "${label}")]]`
   )
@@ -596,6 +607,17 @@ async function closeActiveEditor() {
  */
 async function switchBackToMainFrame() {
   await browser.switchToFrame(null)
+}
+
+/**
+ * Dismisses any visible VS Code notification toasts. A patch mutation (status change, title
+ * or description edit) triggers an "Updated and announced patch" toast that otherwise lingers
+ * into the next test and can intercept a click meant for a webview button behind it.
+ */
+async function dismissAllNotifications() {
+  await browser.executeWorkbench(async (vscode: typeof VsCode) => {
+    await vscode.commands.executeCommand('notifications.clearAll')
+  })
 }
 
 /**
@@ -679,14 +701,6 @@ async function switchToPatchDetailWebview(workbench: Workbench) {
 }
 
 describe('Patch state synchronization,', () => {
-  // Runs locally but skipped on CI: the "moves the checked-out marker" test is chronically flaky
-  // there due to VS Code sidebar render-timing (the marker repaints later than the wait window),
-  // and it mutates git state (seeds a branch), so mocha retries are not safe either. The "sorts"
-  // test reuses that branch/patch, so it is skipped alongside it to keep the pair coherent.
-  // Tracked in https://github.com/maninak/radicle-vscode-extension/issues/195 . Linux CI covers
-  // the rest of this spec; macOS CI skips the spec whole (see test/e2e/wdio.conf.ts).
-  const itSkippedOnCi = process.env['CI'] ? it.skip : it
-
   const secondPatchTitle = 'feat: second patch'
   const thirdPatchTitle = 'feat: third patch'
   let workbench: Workbench
@@ -776,12 +790,10 @@ describe('Patch state synchronization,', () => {
     await zx`git checkout -- hello.txt`
 
     // dismiss the asserted error notification so it cannot obscure later interactions
-    await browser.executeWorkbench(async (vscode: typeof VsCode) => {
-      await vscode.commands.executeCommand('notifications.clearAll')
-    })
+    await dismissAllNotifications()
   })
 
-  itSkippedOnCi('moves the checked-out marker when checking out another patch', async () => {
+  it('moves the checked-out marker when checking out another patch', async () => {
     secondPatchId = await seedExtraPatch(workspacePath, 'feat/second', secondPatchTitle)
     await workbench.executeCommand('Refresh All Patch Data')
 
@@ -807,33 +819,30 @@ describe('Patch state synchronization,', () => {
     await webview.close()
   })
 
-  itSkippedOnCi(
-    'sorts an out-of-band updated patch to the top, listing it exactly once',
-    async () => {
-      await seedExtraPatch(workspacePath, 'feat/third', thirdPatchTitle)
-      await workbench.executeCommand('Refresh All Patch Data')
+  it('sorts an out-of-band updated patch to the top, listing it exactly once', async () => {
+    await seedExtraPatch(workspacePath, 'feat/third', thirdPatchTitle)
+    await workbench.executeCommand('Refresh All Patch Data')
 
-      await expect(await findPatchItem(thirdPatchTitle)).toBeDisplayed()
-      await expectPatchItemToBeListedAbove(thirdPatchTitle, secondPatchTitle)
+    await expect(await findPatchItem(thirdPatchTitle)).toBeDisplayed()
+    await expectPatchItemToBeListedAbove(thirdPatchTitle, secondPatchTitle)
 
-      // grow the older patch (the second) with a new revision, out of band
-      await zx`git checkout feat/second`
-      await zx`echo "more" >> second.txt`
-      await zx`git add second.txt`
-      await zx`git commit -m 'grows the second patch' --no-gpg-sign`
-      await zx`git push rad HEAD:patches/${secondPatchId}`
+    // grow the older patch (the second) with a new revision, out of band
+    await zx`git checkout feat/second`
+    await zx`echo "more" >> second.txt`
+    await zx`git add second.txt`
+    await zx`git commit -m 'grows the second patch' --no-gpg-sign`
+    await zx`git push rad HEAD:patches/${secondPatchId}`
 
-      await workbench.executeCommand('Refresh All Patch Data')
+    await workbench.executeCommand('Refresh All Patch Data')
 
-      await expectPatchItemToBeListedAbove(secondPatchTitle, thirdPatchTitle)
+    await expectPatchItemToBeListedAbove(secondPatchTitle, thirdPatchTitle)
 
-      const rowsWithSecondPatchTitle = (await snapshotSidebarRowTexts()).filter((text) =>
-        text.includes(secondPatchTitle),
-      )
+    const rowsWithSecondPatchTitle = (await snapshotSidebarRowTexts()).filter((text) =>
+      text.includes(secondPatchTitle),
+    )
 
-      expect(rowsWithSecondPatchTitle.length).toBe(1)
-    },
-  )
+    expect(rowsWithSecondPatchTitle.length).toBe(1)
+  })
 })
 
 /** Creates one more patch off of master, on `branchName`, and returns its id. */
@@ -944,10 +953,6 @@ async function expectPatchItemCheckedOutMarker(label: string, isShown: boolean) 
       return false
     },
     {
-      // patch checkouts trigger several successive re-renders, each involving a `rad cob show`
-      // that can transiently fail and retry if it races the checkout's own node lock; under
-      // heavy parallel CI load that chain occasionally needs more than a few seconds to settle
-      timeout: 30_000,
       timeoutMsg: `expected the item labeled "${label}" to ${
         isShown ? 'show' : 'not show'
       } the checked-out marker. Last visible row text: "${lastRowText}"`,
