@@ -165,6 +165,10 @@ describe("Patch details, of a patch on the user's own rad-initialized repo,", ()
     )
 
     expect(getPatchStatusFromRadCli(workspacePath, patchId)).toBe('draft')
+
+    // the mutation's "Updated and announced patch" toast would otherwise linger into (and
+    // intercept a click meant for a webview button in) the next test
+    await dismissAllNotifications()
   })
 
   it('persists patch title and description edits submitted from within the webview', async () => {
@@ -191,6 +195,8 @@ describe("Patch details, of a patch on the user's own rad-initialized repo,", ()
     const patchShowOutput = (await zx`rad patch show ${patchId}`).stdout
 
     expect(patchShowOutput).toContain(webviewEditedPatchTitle)
+
+    await dismissAllNotifications()
   })
 
   it("lists a patch's changed files, diffed via git, and opens a diff editor", async () => {
@@ -604,6 +610,17 @@ async function switchBackToMainFrame() {
 }
 
 /**
+ * Dismisses any visible VS Code notification toasts. A patch mutation (status change, title
+ * or description edit) triggers an "Updated and announced patch" toast that otherwise lingers
+ * into the next test and can intercept a click meant for a webview button behind it.
+ */
+async function dismissAllNotifications() {
+  await browser.executeWorkbench(async (vscode: typeof VsCode) => {
+    await vscode.commands.executeCommand('notifications.clearAll')
+  })
+}
+
+/**
  * Opens (or reveals) the details webview of the patch item labeled `label`.
  *
  * An already open (but possibly backgrounded, and thus iframe-less) panel is revealed by
@@ -773,9 +790,7 @@ describe('Patch state synchronization,', () => {
     await zx`git checkout -- hello.txt`
 
     // dismiss the asserted error notification so it cannot obscure later interactions
-    await browser.executeWorkbench(async (vscode: typeof VsCode) => {
-      await vscode.commands.executeCommand('notifications.clearAll')
-    })
+    await dismissAllNotifications()
   })
 
   it('moves the checked-out marker when checking out another patch', async () => {
