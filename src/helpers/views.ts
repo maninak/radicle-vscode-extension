@@ -21,10 +21,10 @@ function registerPatchesView() {
   })
 
   const updatePatchesViewDescription = effect(() => {
-    if (!patchesView.visible) {
-      return
-    }
-
+    // Read the reactive store deps unconditionally (no early return above this): a `visible`
+    // guard here would run before these reads on the effect's first, hidden invocation, so the
+    // effect would never subscribe to them and the header would only refresh on the slow
+    // interval below instead of the moment patches load.
     const patchCount = usePatchStore().patches?.length
     const formattedPatchCount = typeof patchCount === 'number' ? `${patchCount} · ` : ''
 
