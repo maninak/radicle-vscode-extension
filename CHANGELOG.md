@@ -2,6 +2,10 @@
 
 ## **Unreleased**
 
+### 🩹 Fixes
+
+- **packaging:** trim down what's bundled in the published extension artifact (tests, build scripts, lint/test config, etc). Cuts the packaged artifact from 341 to 127 files
+
 ### 📖 Documentation
 
 - **changelog:** head the v0.7.0 entry with its actual release date instead of leaving it as Unreleased
