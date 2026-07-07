@@ -2,6 +2,15 @@
 
 ## **Unreleased**
 
+### 📖 Documentation
+
+- **changelog:** head the v0.7.0 entry with its actual release date instead of leaving it as Unreleased
+- **contributing:** fix the Open VSX publish command in the release guide to properly use `ovsx`
+
+---
+
+## **v0.7.0** (July 7th, 2026)
+
 ### ✨ Highlights
 
 - httpd is no longer required

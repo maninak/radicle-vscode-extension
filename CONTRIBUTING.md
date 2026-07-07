@@ -186,5 +186,5 @@ After having completed the above you should have a packaged version of the exten
 Then get an [Open VSX access](https://github.com/eclipse-openvsx/openvsx/wiki/Publishing-Extensions#3-create-an-access-token) token.
 
 ```sh
-npx publish radicle-[x.y.z].vsix -p my-openvsx-token
+npx ovsx publish radicle-[x.y.z].vsix -p my-openvsx-token
 ```
