@@ -42,7 +42,9 @@ function browseDiff() {
     Refresh
   </vscode-button>
   <vscode-button
-    v-if="!patch.isCheckedOut"
+    v-if="
+      !patch.isCheckedOut && (patch.state.status === 'open' || patch.state.status === 'draft')
+    "
     class="self-center"
     appearance="secondary"
     title="Check Out the Git Branch Associated with This Radicle Patch"
@@ -53,7 +55,7 @@ function browseDiff() {
     Check Out
   </vscode-button>
   <vscode-button
-    v-else
+    v-if="patch.isCheckedOut"
     class="self-center"
     appearance="secondary"
     title="Switch from the Git Branch Associated with This Patch to the Repo's Default Branch"

@@ -1,5 +1,21 @@
 # Radicle VS Code Extension Change Log
 
+## **Unreleased**
+
+### 🚀 Enhancements
+
+- **patches:** stop prominently offering checkout for archived and merged patches. Their inline list-item button and detail-webview button are now hidden; checkout stays available via the item's right-click menu
+
+### 🩹 Fixes
+
+- **patches:** show the Patches view's "N · Updated ..." header promptly, including "0 · ..." for a repo with no patches. It could previously stay blank until a later refresh when the view was hidden as patches first loaded
+
+### ☑️ Tests
+
+- **patches:** cover with e2e tests that checkout is offered prominently for an open patch but not an archived one, in both the list item and the patch's detail webview
+
+---
+
 ## **v0.7.1** (July 7th, 2026)
 
 ### 🩹 Fixes

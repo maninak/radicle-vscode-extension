@@ -294,7 +294,7 @@
         },
         {
           "command": "radicle.checkoutPatch",
-          "when": "view == patches-view && viewItem =~ /patch/ && viewItem =~ /:checked-out-false/",
+          "when": "view == patches-view && viewItem =~ /patch/ && viewItem =~ /:checked-out-false/ && viewItem =~ /:status-(open|draft)/",
           "group": "inline@2"
         },
         {

@@ -33,8 +33,10 @@ const selectors = {
   savePatchEditsButton: '[title="Save Changes to Radicle (Ctrl + Enter)"]',
   openPatchIcon: '.codicon-git-pull-request',
   draftPatchIcon: '.codicon-git-pull-request-draft',
+  archivedPatchIcon: '.codicon-git-pull-request-closed',
   checkOutPatchBranchButton: '[title^="Check Out the Git Branch"]',
   checkOutDefaultBranchButton: '[title^="Switch from the Git Branch"]',
+  revealPatchButton: '[title^="Reveal Patch"]',
   checkOutPatchInlineButton: 'aria/Check Out Patch Branch',
 } as const
 
@@ -845,6 +847,84 @@ describe('Patch state synchronization,', () => {
   })
 })
 
+describe('Checkout affordances gated by patch status,', () => {
+  const patchToArchiveTitle = 'feat: patch to archive'
+  let workbench: Workbench
+  let workspacePath: string
+  let patchToArchiveId: string
+
+  before(async () => {
+    workbench = await browser.getWorkbench()
+    workspacePath = process.env['RAD_E2E_WORKSPACE'] ?? ''
+  })
+
+  afterEach(async () => {
+    await switchBackToMainFrame()
+  })
+
+  it('prominently offers checkout for a non-checked-out open patch', async () => {
+    patchToArchiveId = await seedExtraPatch(
+      workspacePath,
+      'feat/to-archive',
+      patchToArchiveTitle,
+    )
+    // pushing a patch checks its branch out (radicle sets its upstream to `rad/patches/<id>`);
+    // switch back to the default branch so this patch is not the checked-out one, making
+    // "Check Out Patch Branch" (rather than "Check Out Default Branch") the offered affordance
+    await zx`git checkout master`
+    await workbench.executeCommand('Refresh All Patch Data')
+
+    await expect(await findPatchItem(patchToArchiveTitle)).toBeDisplayed()
+    await expectPatchItemCheckedOutMarker(patchToArchiveTitle, false)
+
+    // the inline "Check Out Patch Branch" button shows on the list item while the patch is open
+    await expectPatchItemInlineButtonPresence(
+      patchToArchiveTitle,
+      selectors.checkOutPatchInlineButton,
+      true,
+    )
+
+    // and the detail webview offers its own prominent "Check Out" button
+    await openPatchDetails(patchToArchiveTitle)
+    const webview = await switchToPatchDetailWebview(workbench)
+
+    await expect($(selectors.checkOutPatchBranchButton)).toBeDisplayed()
+
+    await webview.close()
+  })
+
+  it('stops prominently offering checkout once the patch is archived', async () => {
+    cd(workspacePath)
+    await zx`rad patch archive ${patchToArchiveId}`
+    await workbench.executeCommand('Refresh All Patch Data')
+
+    await browser.waitUntil(
+      async () =>
+        await (await findPatchItem(patchToArchiveTitle))
+          .$(selectors.archivedPatchIcon)
+          .isExisting(),
+      { timeoutMsg: 'expected the patch item to show the archived status icon' },
+    )
+
+    // the prominent inline list button is gone
+    await expectPatchItemInlineButtonPresence(
+      patchToArchiveTitle,
+      selectors.checkOutPatchInlineButton,
+      false,
+    )
+
+    // and so is the detail webview's prominent "Check Out" button (the ever-present "Reveal"
+    // button confirms the webview did load, so the absence is real, not a not-yet-rendered panel)
+    await openPatchDetails(patchToArchiveTitle)
+    const webview = await switchToPatchDetailWebview(workbench)
+
+    await expect($(selectors.revealPatchButton)).toBeDisplayed()
+    await expect($(selectors.checkOutPatchBranchButton)).not.toBeDisplayed()
+
+    await webview.close()
+  })
+})
+
 /** Creates one more patch off of master, on `branchName`, and returns its id. */
 async function seedExtraPatch(workspacePath: string, branchName: string, title: string) {
   const preexistingPatchIds = listPatchIds(workspacePath)
@@ -958,6 +1038,44 @@ async function expectPatchItemCheckedOutMarker(label: string, isShown: boolean) 
       } the checked-out marker. Last visible row text: "${lastRowText}"`,
     },
   )
+}
+
+/**
+ * Hovers the patch item labeled `label` (so its inline action bar materializes) and asserts
+ * whether the inline button matching `buttonSelector` is present. The always-present "Open
+ * Patch Details" inline button is used as a sentinel that the action bar rendered, so a
+ * `false` assertion means the button is genuinely absent rather than not-yet-rendered.
+ */
+async function expectPatchItemInlineButtonPresence(
+  label: string,
+  buttonSelector: string,
+  shouldBePresent: boolean,
+) {
+  await browser.waitUntil(
+    async () => {
+      // park the pointer on neutral ground first so hovering the row fires a fresh mouseenter
+      await $('.statusbar').moveTo()
+      const patchItem = await findPatchItem(label)
+      await patchItem.moveTo()
+
+      const isActionBarRendered = await patchItem
+        .$(selectors.openPatchDetailsButton)
+        .isExisting()
+      if (!isActionBarRendered) {
+        return false
+      }
+
+      return (await patchItem.$(buttonSelector).isExisting()) === shouldBePresent
+    },
+    {
+      timeoutMsg: `expected the inline button "${buttonSelector}" to ${
+        shouldBePresent ? 'be' : 'not be'
+      } present on the item labeled "${label}"`,
+    },
+  )
+
+  // park the pointer again so a lingering hover does not stall follow-up re-renders
+  await $('.statusbar').moveTo()
 }
 
 async function findAndFillInput(selector: string, value: string) {
