@@ -359,18 +359,33 @@ function togglePreviewMarkdown() {
           <span :title="event.revision.author.id" class="font-mono">
             {{ getIdentityAliasOrId(event.review.author) }}
           </span>
-          <template v-if="event.review.summary">
-            <details v-if="event.review.summary && event.review.comment">
+          <template v-if="event.review.summary || event.review.comment">
+            <details
+              v-if="
+                event.review.comment ||
+                (event.review.summary?.length ?? 0) > maxCharsForUntruncatedMdText
+              "
+            >
               <summary
                 title="Click to Expand/Collapse"
                 class="mt-1 max-w-prose break-words font-mono text-sm"
               >
-                {{ event.review.summary }}
+                {{ truncateMarkdown(event.review.summary ?? event.review.comment ?? '') }}
               </summary>
-              <Markdown :source="event.review.comment" class="mt-[0.25em] text-sm" />
+              <p
+                v-if="(event.review.summary?.length ?? 0) > maxCharsForUntruncatedMdText"
+                class="max-w-prose break-words font-mono text-sm"
+              >
+                {{ event.review.summary }}
+              </p>
+              <Markdown
+                v-if="event.review.comment"
+                :source="event.review.comment"
+                class="mt-[0.25em] text-sm"
+              />
             </details>
             <p
-              v-else-if="event.review.summary && !event.review.comment"
+              v-else-if="event.review.summary"
               class="mb-[-0.2em] mt-1 max-w-prose break-words font-mono text-sm"
             >
               {{ event.review.summary }}
