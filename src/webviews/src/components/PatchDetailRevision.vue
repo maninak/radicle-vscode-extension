@@ -7,7 +7,7 @@ import {
   vsCodeOption,
 } from '@vscode/webview-ui-toolkit'
 import { storeToRefs } from 'pinia'
-import { computed, ref } from 'vue'
+import { computed, ref, toRaw } from 'vue'
 import { getIdentityAliasOrId, shortenHash } from 'extensionUtils/string'
 import {
   getDateInIsoWithZeroedTimezone,
@@ -87,6 +87,13 @@ const selectedRevisionRejectedReviews = computed(() =>
   selectedRevision.value.reviews.filter((review) => review.verdict === 'reject'),
 )
 
+function browseRevisionDiff() {
+  notifyExtension({
+    command: 'openRevisionDiff',
+    payload: { patch: toRaw(patch.value), revisionId: selectedRevision.value.id },
+  })
+}
+
 defineExpose({ selectedRevision, selectRevision })
 </script>
 
@@ -115,6 +122,13 @@ defineExpose({ selectedRevision, selectRevision })
           @click="$emit('showCreateCommentForm', selectedRevision)"
         >
           Comment
+        </vscode-button>
+        <vscode-button
+          appearance="secondary"
+          title="Browse All of the Selected Revision's Changed Files in a Multi-File Diff"
+          @click="browseRevisionDiff"
+        >
+          Browse Diff
         </vscode-button>
       </div>
     </div>

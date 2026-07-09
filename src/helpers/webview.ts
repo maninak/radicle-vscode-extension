@@ -1,4 +1,4 @@
-import type { Patch, PatchDetailWebviewInjectedState } from '../types'
+import type { AugmentedPatch, Patch, PatchDetailWebviewInjectedState } from '../types'
 import {
   commands,
   ExtensionMode,
@@ -8,7 +8,7 @@ import {
   type WebviewPanel,
   window,
 } from 'vscode'
-import { execPatchMutation, revealPatch } from '.'
+import { buildMultiFileDiffResources, execPatchMutation, revealPatch } from '.'
 import {
   allWebviewIds,
   useEnvStore,
@@ -16,7 +16,14 @@ import {
   useWebviewStore,
   type WebviewId,
 } from '../stores'
-import { assert, assertUnreachable, getNonce, truncateKeepWords } from '../utils'
+import {
+  assert,
+  assertUnreachable,
+  getNonce,
+  log,
+  shortenHash,
+  truncateKeepWords,
+} from '../utils'
 import { type notifyExtension, notifyWebview } from '../utils/webview-messaging'
 import {
   checkOutDefaultBranch,
@@ -273,6 +280,39 @@ export function alignUiWithWebviewPatchDetailState(
   }
 }
 
+/** Opens the multi-file diff of the given patch revision's changes. */
+function openRevisionDiff(patch: AugmentedPatch, revisionId: string): void {
+  const rid = useEnvStore().currentRepoId
+  const revision = patch.revisions.find((rev) => rev.id === revisionId)
+  if (!rid || !revision) {
+    log(
+      `Failed opening the diff of revision "${revisionId}": ${
+        rid ? 'revision not found on the patch' : 'no Radicle repo id resolved'
+      }.`,
+      'error',
+    )
+
+    return
+  }
+
+  const { resources, error } = buildMultiFileDiffResources(rid, revision.base, revision.oid)
+  if (error) {
+    log(`Failed opening the diff of revision "${revisionId}".`, 'error', error.message)
+
+    return
+  }
+  if (!resources.length) {
+    log(`Revision "${revisionId}" has no changed files to diff.`, 'warn')
+
+    return
+  }
+  void commands.executeCommand(
+    'vscode.changes',
+    `Revision changes: ${shortenHash(revisionId)}`,
+    resources,
+  )
+}
+
 function handleMessageFromWebviewPatchDetail(
   message: Parameters<typeof notifyExtension>['0'],
   webview: Webview,
@@ -304,6 +344,11 @@ function handleMessageFromWebviewPatchDetail(
     case 'openPatchMultiFileDiff':
       commands.executeCommand('radicle.openAllPatchFileChanges', message.payload.patch)
       break
+
+    case 'openRevisionDiff': {
+      openRevisionDiff(message.payload.patch, message.payload.revisionId)
+      break
+    }
     case 'updatePatchTitleAndDescription':
       mutatePatch(message.payload.patchId, message.payload.oldTitle, (timeout?: number) =>
         execPatchMutation(

@@ -24,6 +24,7 @@ type MessageToExtension =
   | Message<'checkOutPatchBranch', { patch: Patch }>
   | Message<'revealInPatchesView', { patch: AugmentedPatch }>
   | Message<'openPatchMultiFileDiff', { patch: AugmentedPatch }>
+  | Message<'openRevisionDiff', { patch: AugmentedPatch; revisionId: string }>
   | Message<'checkOutDefaultBranch'>
   | Message<
       'updatePatchTitleAndDescription',
