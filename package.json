@@ -613,7 +613,8 @@
     "zx": "^8.1.9"
   },
   "simple-git-hooks": {
-    "pre-commit": "npx lint-staged"
+    "pre-commit": "npx lint-staged",
+    "pre-push": "[ ! -f scripts/refuse-main-push.mjs ] || node scripts/refuse-main-push.mjs"
   },
   "lint-staged": {
     "*": "eslint --fix --max-warnings 0 --no-warn-ignored --cache --cache-location node_modules/.cache/eslint"
