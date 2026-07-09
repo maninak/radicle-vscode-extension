@@ -8,6 +8,7 @@
 
 ### 🩹 Fixes
 
+- **patch-detail:** bound long review bodies in the Activity timeline with the same expand/collapse treatment long comments get, and show a review's comment even when it carries no summary line (it used to render nothing at all)
 - **patches:** show the Patches view's "N · Updated ..." header promptly, including "0 · ..." for a repo with no patches. It could previously stay blank until a later refresh when the view was hidden as patches first loaded
 
 ### ☑️ Tests
