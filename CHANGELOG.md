@@ -4,6 +4,7 @@
 
 ### 🚀 Enhancements
 
+- **patch-detail:** browse the diff of any revision: a "Browse Diff" button next to the revision selector opens the selected revision's changed files, where previously only the latest revision's diff was reachable
 - **patches:** stop prominently offering checkout for archived and merged patches. Their inline list-item button and detail-webview button are now hidden; checkout stays available via the item's right-click menu
 
 ### 🩹 Fixes
