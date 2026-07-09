@@ -71,9 +71,19 @@ export function buildPatchMultiFileDiffResources(
   patch: AugmentedPatch,
 ): XOR<{ resources: MultiFileDiffResource[] }, { error: Error }> {
   const { latestRevision } = getFirstAndLatestRevisions(patch)
-  const oldCommit = latestRevision.base
-  const newCommit = latestRevision.oid
 
+  return buildMultiFileDiffResources(rid, latestRevision.base, latestRevision.oid)
+}
+
+/**
+ * Builds the resource list for the multi-file diff between any two commits resolvable in the
+ * local storage repo; see `buildPatchMultiFileDiffResources` for the row semantics.
+ */
+export function buildMultiFileDiffResources(
+  rid: BlobParams['rid'],
+  oldCommit: string,
+  newCommit: string,
+): XOR<{ resources: MultiFileDiffResource[] }, { error: Error }> {
   const { data: filechanges, error } = loadPatchFilechanges(rid, oldCommit, newCommit)
   if (error) {
     return { error }
