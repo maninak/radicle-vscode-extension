@@ -126,6 +126,29 @@ describe('loadPatches() from the local node', () => {
   // A redacted review serializes as `null` in the reviews map (like redacted revisions do);
   // it must be skipped, not crash the whole listing (the same failure class this branch set
   // out to fix).
+  it('maps a review faithfully: verdict, summary, and author survive', () => {
+    // regression guard for GH #206: real `rad cob show` review shape (verified against all
+    // 156 reviews in heartwood's storage on 2026-07-09) must map without losing the verdict
+    execRadMock.mockImplementation((args: string[]) => {
+      if (args.includes('list')) {
+        return { stdout: patchId }
+      }
+      if (args.includes('show')) {
+        return { stdout: patchCobFixture({ reviews: { r1: reviewFixture() } }) }
+      }
+
+      return { errorCode: 1 }
+    })
+
+    const { data } = loadPatches('rad:z123')
+
+    const review = data?.[0]?.revisions[0]?.reviews[0]
+
+    expect(review?.verdict).toBe('accept')
+    expect(review?.summary).toBe('lgtm')
+    expect(review?.author.id).toBe(`did:key:${authorA}`)
+  })
+
   it('skips a redacted (null) review instead of failing the load', () => {
     execRadMock.mockImplementation((args: string[]) => {
       if (args.includes('list')) {
