@@ -202,6 +202,15 @@ export function registerAllCommands(): void {
       proposedPanelTitle: patch.title,
     })
   })
+  registerVsCodeCmd('radicle.viewPatchDetailsToTheSide', (patch: AugmentedPatch) => {
+    assert(patch)
+    createOrReuseWebviewPanel({
+      webviewId: 'webview-patch-detail',
+      data: patch.id,
+      proposedPanelTitle: patch.title,
+      mode: 'toTheSide',
+    })
+  })
   registerVsCodeCmd('radicle.draftizePatch', (patch: Patch | undefined) => {
     assert(patch)
     const patchStatus = patch.state.status as Exclude<PatchStatus, 'draft' | 'merged'>
