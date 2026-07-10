@@ -4,6 +4,7 @@
 
 ### 🚀 Enhancements
 
+- **patches:** open patch details in a single reused preview-like tab: opening another patch's details replaces that tab's content in place instead of piling up one more tab per patch. Panels opened to the side are kept as-is, excluded from such reuse, and an in-progress comment or edit draft never carries over when the reused tab switches to a different patch
 - **patches:** stop prominently offering checkout for archived and merged patches. Their inline list-item button and detail-webview button are now hidden; checkout stays available via the item's right-click menu
 
 ### 🩹 Fixes

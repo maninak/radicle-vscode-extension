@@ -4,17 +4,23 @@ import { defineStore } from 'pinia'
 import { computed, reactive, watchEffect } from 'vue'
 import { getFirstAndLatestRevisions } from 'extensionHelpers/patch'
 import type { notifyWebview } from 'extensionUtils/webview-messaging'
+import { getStateMergedWithUpdate } from '@/helpers/patchDetail'
 import { getVscodeRef } from '@/utils/getVscodeRef'
 
-type SavedPanelState = Omit<PatchDetailWebviewInjectedState, 'id'> & typeof initialExtraState
+type SavedPanelState = Omit<PatchDetailWebviewInjectedState, 'id'> &
+  ReturnType<typeof makeInitialExtraState>
 type FormStatus = 'off' | 'editing' | 'previewing'
 
 const vscode = getVscodeRef<SavedPanelState>()
-const initialExtraState = {
-  injectedStateIds: [] as number[],
-  patchEditForm: { title: '', descr: '', status: 'off' as FormStatus },
-  // eslint-disable-next-line ts/consistent-type-assertions -- empty object cast is idiomatic for a typed default state
-  patchCommentForm: {} as Record<Revision['id'], { comment: string; status: FormStatus }>,
+
+// a factory (not a shared const) so form edits can never mutate the pristine defaults
+function makeInitialExtraState() {
+  return {
+    injectedStateIds: [] as number[],
+    patchEditForm: { title: '', descr: '', status: 'off' as FormStatus },
+    // eslint-disable-next-line ts/consistent-type-assertions -- empty object cast is idiomatic
+    patchCommentForm: {} as Record<Revision['id'], { comment: string; status: FormStatus }>,
+  }
 }
 
 export const usePatchDetailStore = defineStore('patch-detail', () => {
@@ -23,7 +29,7 @@ export const usePatchDetailStore = defineStore('patch-detail', () => {
     window.injectedWebviewState.id,
   )
   const state = reactive({
-    ...initialExtraState,
+    ...makeInitialExtraState(),
     ...savedVscodeState,
     ...(shouldRejectInjectedState
       ? undefined
@@ -88,8 +94,10 @@ export const usePatchDetailStore = defineStore('patch-detail', () => {
       const message = event.data
 
       if (message.command === 'updateState') {
-        const stateBak = { ...state }
-        Object.assign(state, initialExtraState, stateBak, message.payload)
+        Object.assign(
+          state,
+          getStateMergedWithUpdate(state, makeInitialExtraState(), message.payload),
+        )
       }
     },
   )
