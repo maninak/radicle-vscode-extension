@@ -144,6 +144,14 @@
         "enablement": "radicle.isRadInitialized"
       },
       {
+        "command": "radicle.viewPatchDetailsToTheSide",
+        "title": "Open Patch Details to the Side",
+        "shortTitle": "Patch Details to the Side",
+        "category": "Radicle",
+        "icon": "$(split-horizontal)",
+        "enablement": "radicle.isRadInitialized"
+      },
+      {
         "command": "radicle.openAllPatchFileChanges",
         "title": "Open All Changed Files in a Multi-File Diff",
         "shortTitle": "Open Multi-File Diff",
@@ -218,6 +226,10 @@
           "when": "false"
         },
         {
+          "command": "radicle.viewPatchDetailsToTheSide",
+          "when": "false"
+        },
+        {
           "command": "radicle.openAllPatchFileChanges",
           "when": "false"
         },
@@ -274,6 +286,7 @@
       "view/item/context": [
         {
           "command": "radicle.viewPatchDetails",
+          "alt": "radicle.viewPatchDetailsToTheSide",
           "when": "view == patches-view && viewItem =~ /patch/",
           "group": "inline@1"
         },
@@ -283,14 +296,19 @@
           "group": "contextMenu.A@1"
         },
         {
+          "command": "radicle.viewPatchDetailsToTheSide",
+          "when": "view == patches-view && viewItem =~ /patch/",
+          "group": "contextMenu.A@2"
+        },
+        {
           "command": "radicle.openAllPatchFileChanges",
           "when": "view == patches-view && viewItem =~ /patch/",
-          "group": "contextMenu.A@3"
+          "group": "contextMenu.A@4"
         },
         {
           "command": "radicle.refreshOnePatch",
           "when": "view == patches-view && viewItem =~ /patch/",
-          "group": "contextMenu.A@2"
+          "group": "contextMenu.A@3"
         },
         {
           "command": "radicle.checkoutPatch",

@@ -22,7 +22,9 @@ import {
 } from '../helpers/testSandbox'
 
 const selectors = {
-  openPatchDetailsButton: 'aria/Open Patch Details',
+  // prefix-matched: an inline action with an `alt` counterpart gets "[Alt] ..." appended
+  // to its accessible name by VS Code, which an exact `aria/` lookup would miss
+  openPatchDetailsButton: 'a[role="button"][aria-label^="Open Patch Details"]',
   changePatchStatusButton: '[title="Change Patch Status"]',
   draftRadioButton: 'aria/Draft',
   stopEditingPatchStatusButton: '[title="Stop Editing Patch Status"]',
@@ -647,35 +649,48 @@ async function openPatchDetails(label: string) {
  * mid-interaction.
  */
 async function clickPatchItemInlineButton(label: string, buttonSelector: string) {
-  await browser.waitUntil(
-    async () => {
-      try {
-        // park the pointer on neutral ground first: if it already rests where the row got
-        // re-rendered, a stationary `moveTo` fires no fresh mouseenter and the hover-only
-        // button never shows
-        await $('.statusbar').moveTo()
-
-        const patchItem = await findPatchItem(label)
-        await patchItem.moveTo()
-        const button = await patchItem.$(buttonSelector)
-
+  // surfaced in the timeout error, so a failure states WHY the click kept failing
+  // (e.g. a drifted accessible name) instead of just that it timed out
+  let lastAttemptError: unknown
+  try {
+    await browser.waitUntil(
+      async () => {
         try {
-          await button.click()
-        } catch {
-          // hover-only inline actions can lose their hover mid-interaction when the row
-          // re-renders; dispatching the click directly is deterministic
-          await browser.execute((buttonElem) => (buttonElem as HTMLElement).click(), button)
-        }
+          // park the pointer on neutral ground first: if it already rests where the row got
+          // re-rendered, a stationary `moveTo` fires no fresh mouseenter and the hover-only
+          // button never shows
+          await $('.statusbar').moveTo()
 
-        return true
-      } catch {
-        return false
-      }
-    },
-    {
-      timeoutMsg: `expected to click "${buttonSelector}" on the item labeled "${label}"`,
-    },
-  )
+          const patchItem = await findPatchItem(label)
+          await patchItem.moveTo()
+          const button = await patchItem.$(buttonSelector)
+
+          try {
+            await button.click()
+          } catch {
+            // hover-only inline actions can lose their hover mid-interaction when the row
+            // re-renders; dispatching the click directly is deterministic
+            await browser.execute((buttonElem) => (buttonElem as HTMLElement).click(), button)
+          }
+
+          return true
+        } catch (error) {
+          lastAttemptError = error
+
+          return false
+        }
+      },
+      {
+        timeoutMsg: `expected to click "${buttonSelector}" on the item labeled "${label}"`,
+      },
+    )
+  } catch (error) {
+    throw new Error(
+      `expected to click "${buttonSelector}" on the item labeled "${label}"; ` +
+        `last attempt failed with: ${String(lastAttemptError)}`,
+      { cause: error },
+    )
+  }
 
   // park the pointer again: a lingering hover (and its tooltip) over the list makes
   // VS Code defer re-rendering the hovered rows, stalling the very updates we assert next

@@ -8,7 +8,7 @@ import {
   type WebviewPanel,
   window,
 } from 'vscode'
-import { execPatchMutation, revealPatch } from '.'
+import { execPatchMutation, resolvePanelReuse, revealPatch } from '.'
 import {
   allWebviewIds,
   useEnvStore,
@@ -28,15 +28,20 @@ import {
 // TODO: move this file (and other found in helpers) to "/services" or "/providers"
 
 /**
- * Opens a panel with the specified webview in the active column.
+ * Opens a panel with the specified webview, with preview-like tab semantics.
  *
- * If the webview is already open and visible in another column it will be moved to the active
- * column without getting re-created.
+ * A normal open (mode `'preview'`) funnels into a single designated reusable panel per
+ * `webviewId`: if that panel is alive it gets retargeted in place to render the given
+ * data and revealed in whichever column it already lives, instead of a new panel piling
+ * up per subject. An explicit open to the side (mode `'toTheSide'`) creates a standalone
+ * panel excluded from such reuse, like a kept editor tab. Either way, a panel already
+ * rendering the given data just gets revealed.
  */
 export async function createOrReuseWebviewPanel({
   webviewId,
   data,
   proposedPanelTitle,
+  mode = 'preview',
 }: /* unite here alternative `webviewId` & `data` pairs as new webviews get built */ {
   /**
    * The identifier specifying the kind of the panel to be (re-)used.
@@ -50,20 +55,44 @@ export async function createOrReuseWebviewPanel({
    * The proposed title to be used for the webview panel's tab. May be further processed.
    */
   proposedPanelTitle: string
+  /**
+   * How to open the panel. Defaults to `'preview'`.
+   */
+  mode?: 'preview' | 'toTheSide'
 }) {
-  const column = window.activeTextEditor ? window.activeTextEditor.viewColumn : undefined
   const webviewStore = useWebviewStore()
-  const foundPanel = webviewStore.find(`${webviewId}_${data}`)?.panel
-  const stateForWebview = await getStateForWebview(webviewId, data)
+  const decision = resolvePanelReuse({
+    intent: mode === 'toTheSide' ? 'standalone' : 'reusePreview',
+    data,
+    candidates: webviewStore.getPanelReuseCandidates(webviewId),
+  })
 
-  if (foundPanel && !webviewStore.isPanelDisposed(foundPanel)) {
-    alignUiWithWebviewPatchDetailState(foundPanel, stateForWebview)
-    foundPanel.reveal(column)
+  switch (decision.verb) {
+    case 'reveal': {
+      const stateForWebview = await getStateForWebview(webviewId, data)
+      alignUiWithWebviewPatchDetailState(decision.panel, stateForWebview)
+      decision.panel.reveal()
+      break
+    }
+    case 'retarget':
+      // the panel's state-pushing effect re-runs, rendering the new data in place
+      webviewStore.retarget(decision.panel, data)
+      decision.panel.reveal()
+      break
 
-    return
+    case 'create': {
+      const stateForWebview = await getStateForWebview(webviewId, data)
+      const column =
+        mode === 'toTheSide' ? ViewColumn.Beside : window.activeTextEditor?.viewColumn
+      createAndShowWebviewPanel(webviewId, proposedPanelTitle, stateForWebview, {
+        column,
+        isPreview: decision.asPreview,
+      })
+      break
+    }
+    default:
+      assertUnreachable(decision)
   }
-
-  createAndShowWebviewPanel(webviewId, proposedPanelTitle, stateForWebview, column)
 }
 
 /**
@@ -82,7 +111,11 @@ export function registerAllWebviewRestorators() {
               state?: Awaited<ReturnType<typeof getStateForWebview>>,
             ) => {
               if (state) {
-                initializePanel(panel, webviewId, state)
+                // a restored preview panel keeps its role, so it stays the one that
+                // normal opens reuse after the restart
+                initializePanel(panel, webviewId, state, {
+                  isPreview: state.panelKind === 'preview',
+                })
               } else {
                 const patchStore = usePatchStore()
                 patchStore.initStoreIfNeeded()
@@ -165,12 +198,15 @@ function createAndShowWebviewPanel(
   webviewId: Parameters<typeof createOrReuseWebviewPanel>['0']['webviewId'],
   panelTitle: string,
   stateForWebview: Awaited<ReturnType<typeof getStateForWebview>>,
-  column?: Parameters<typeof window.createWebviewPanel>['2'],
+  options?: {
+    column?: Parameters<typeof window.createWebviewPanel>['2']
+    isPreview?: boolean
+  },
 ) {
   const panel = window.createWebviewPanel(
     webviewId,
     getFormatedPanelTitle(panelTitle),
-    column ?? ViewColumn.One,
+    options?.column ?? ViewColumn.One,
     {
       enableScripts: true,
       localResourceRoots: [
@@ -182,7 +218,14 @@ function createAndShowWebviewPanel(
     },
   )
 
-  initializePanel(panel, webviewId, stateForWebview)
+  // baked into the injected state so the webview persists it and the panel's role
+  // survives an editor restart
+  const stateWithPanelKind: typeof stateForWebview = {
+    ...stateForWebview,
+    panelKind: options?.isPreview ? 'preview' : 'standalone',
+  }
+
+  initializePanel(panel, webviewId, stateWithPanelKind, { isPreview: options?.isPreview })
 }
 
 /**
@@ -201,14 +244,15 @@ function initializePanel(
   panel: WebviewPanel,
   webviewId: Parameters<typeof createOrReuseWebviewPanel>['0']['webviewId'],
   stateForWebview: Awaited<ReturnType<typeof getStateForWebview>>,
+  options?: { isPreview?: boolean },
 ) {
   const patchId = stateForWebview.state.patch.id
 
   const webviewStore = useWebviewStore()
-  webviewStore.track(panel, webviewId, patchId)
+  webviewStore.track(panel, webviewId, patchId, { isPreview: options?.isPreview })
 
   panel.onDidDispose(
-    () => webviewStore.untrack(`${webviewId}_${patchId}`),
+    () => webviewStore.untrack(panel),
     undefined,
     useEnvStore().extCtx.subscriptions,
   )
@@ -216,7 +260,9 @@ function initializePanel(
   panel.onDidChangeViewState(
     async (viewChangedPanel) => {
       if (viewChangedPanel.webviewPanel.visible) {
-        const newStateForWebview = await getStateForWebview(webviewId, patchId)
+        // the preview panel may have been retargeted since it was created
+        const currentPatchId = webviewStore.getPanelData(panel) ?? patchId
+        const newStateForWebview = await getStateForWebview(webviewId, currentPatchId)
         alignUiWithWebviewPatchDetailState(viewChangedPanel.webviewPanel, newStateForWebview)
       }
     },

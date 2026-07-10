@@ -88,7 +88,7 @@ export const usePatchStore = defineStore('patch', () => {
       Object.assign(existingPatch, augmentedLoadedPatch)
       // HACK: these below should be getting triggered reactively but they don't :/
       rerenderSomeItemsInPatchesView(existingPatch)
-      useWebviewStore().find(`webview-patch-detail_${patchId}`)?.effectRunner()
+      useWebviewStore().refreshPanelsByData('webview-patch-detail', existingPatch.id)
     } else {
       // reassign (not push) so the shallowRef notifies its dependents
       patches.value = [...(patches.value ?? []), augmentedLoadedPatch]

@@ -1,14 +1,15 @@
 import type { WebviewPanel } from 'vscode'
 import type { Patch } from '../types'
-import { effect, reactive, type ReactiveEffectRunner } from '@vue/reactivity'
+import { effect, type ReactiveEffectRunner, ref, type Ref } from '@vue/reactivity'
 import { createPinia, defineStore, setActivePinia } from 'pinia'
-import { alignUiWithWebviewPatchDetailState, getStateForWebview } from '../helpers'
+import {
+  alignUiWithWebviewPatchDetailState,
+  getStateForWebview,
+  type PanelReuseCandidate,
+} from '../helpers'
 import { assertUnreachable } from '../utils'
 
 setActivePinia(createPinia())
-
-// TODO: maninak check why webviews are not reused
-// TODO: maninak on shift/alt + click on item button to open webview, open always in newtab
 
 export const allWebviewIds = ['webview-patch-detail'] as const
 /**
@@ -17,28 +18,50 @@ export const allWebviewIds = ['webview-patch-detail'] as const
  */
 export type WebviewId = (typeof allWebviewIds)[number]
 
+interface TrackedPanel {
+  webviewId: WebviewId
+  /**
+   * Identifier of the data (e.g. a patch id) the panel currently renders. A ref so that
+   * retargeting the panel to different data re-triggers its state-pushing effect.
+   */
+  data: Ref<string>
+  /**
+   * Whether this is the designated reusable "preview" panel of its webviewId. At most one
+   * live panel per webviewId can be the preview panel.
+   */
+  isPreview: boolean
+  effectRunner: ReactiveEffectRunner
+}
+
 export const useWebviewStore = defineStore('webviewStore', () => {
-  const store = reactive<
-    Map<`${WebviewId}_${string}`, { panel: WebviewPanel; effectRunner: ReactiveEffectRunner }>
-  >(new Map())
+  const trackedPanels = new Map<WebviewPanel, TrackedPanel>()
 
   function track(
     panel: WebviewPanel,
     webviewId: 'webview-patch-detail',
     data: Patch['id'],
+    options?: { isPreview?: boolean },
   ): void
-  function track(panel: WebviewPanel, webviewId: WebviewId, data: unknown): void {
+  function track(
+    panel: WebviewPanel,
+    webviewId: WebviewId,
+    data: string,
+    options?: { isPreview?: boolean },
+  ): void {
     switch (webviewId) {
       case 'webview-patch-detail':
         {
-          const patchId = data as Patch['id']
+          // enforce at most one live preview panel per webviewId (e.g. if multiple
+          // serialized panels claim the role when restored after a restart)
+          const isPreview = Boolean(options?.isPreview) && !findPreviewPanel(webviewId)
+          const dataRef = ref(data)
 
           const effectRunner = effect(async () => {
-            const stateForWebview = await getStateForWebview(webviewId, patchId)
+            const stateForWebview = await getStateForWebview(webviewId, dataRef.value)
             alignUiWithWebviewPatchDetailState(panel, stateForWebview)
           })
 
-          store.set(`${panel.viewType as WebviewId}_${patchId}`, { panel, effectRunner })
+          trackedPanels.set(panel, { webviewId, data: dataRef, isPreview, effectRunner })
         }
         break
       default:
@@ -46,23 +69,87 @@ export const useWebviewStore = defineStore('webviewStore', () => {
     }
   }
 
-  function untrack(entryId: `webview-patch-detail_${Patch['id']}`): boolean
-  function untrack(entryId: `${WebviewId}_${string}`) {
+  function untrack(panel: WebviewPanel): boolean {
     // TODO: maninak uncomment code below when we've fixed panels getting insta-disposed.
-    // const effectRunner = panels.get(webviewId)?.effectRunner
+    // const effectRunner = trackedPanels.get(panel)?.effectRunner
     // effectRunner && stop(effectRunner) // `stop` is from @vue/reactivity
 
-    return store.delete(entryId)
+    return trackedPanels.delete(panel)
   }
 
-  function find(
-    entryId: `webview-patch-detail_${Patch['id']}`,
-  ): { panel: WebviewPanel; effectRunner: ReactiveEffectRunner } | undefined
-  function find(entryId: `${WebviewId}_${string}`) {
-    return store.get(entryId)
+  /**
+   * Points an already tracked panel to different data. Its state-pushing effect re-runs,
+   * updating the webview's state, the panel title and its icon for the new data.
+   */
+  function retarget(panel: WebviewPanel, data: string): void {
+    const trackedPanel = trackedPanels.get(panel)
+    if (trackedPanel) {
+      trackedPanel.data.value = data
+    }
   }
 
-  return { track, untrack, find, isPanelDisposed }
+  function getPanelData(panel: WebviewPanel): string | undefined {
+    return trackedPanels.get(panel)?.data.value
+  }
+
+  function findPreviewPanel(webviewId: WebviewId): WebviewPanel | undefined {
+    for (const [panel, trackedPanel] of trackedPanels) {
+      if (
+        trackedPanel.webviewId === webviewId &&
+        trackedPanel.isPreview &&
+        !isPanelDisposed(panel)
+      ) {
+        return panel
+      }
+    }
+
+    return undefined
+  }
+
+  /**
+   * Returns a snapshot of all live panels of the given kind, as input for
+   * `resolvePanelReuse()`.
+   */
+  function getPanelReuseCandidates(webviewId: WebviewId): PanelReuseCandidate<WebviewPanel>[] {
+    const candidates: PanelReuseCandidate<WebviewPanel>[] = []
+    for (const [panel, trackedPanel] of trackedPanels) {
+      if (trackedPanel.webviewId === webviewId && !isPanelDisposed(panel)) {
+        candidates.push({
+          panel,
+          data: trackedPanel.data.value,
+          isPreview: trackedPanel.isPreview,
+        })
+      }
+    }
+
+    return candidates
+  }
+
+  /**
+   * Re-runs the state-pushing effect of every live panel currently rendering the given
+   * data, syncing it with the latest state.
+   */
+  function refreshPanelsByData(webviewId: WebviewId, data: string): void {
+    for (const [panel, trackedPanel] of trackedPanels) {
+      if (
+        trackedPanel.webviewId === webviewId &&
+        trackedPanel.data.value === data &&
+        !isPanelDisposed(panel)
+      ) {
+        trackedPanel.effectRunner()
+      }
+    }
+  }
+
+  return {
+    track,
+    untrack,
+    retarget,
+    getPanelData,
+    getPanelReuseCandidates,
+    refreshPanelsByData,
+    isPanelDisposed,
+  }
 })
 
 function isPanelDisposed(panel: WebviewPanel) {
